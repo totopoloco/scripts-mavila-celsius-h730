@@ -104,8 +104,7 @@ drop-in files over in-place edits, explicit `--undo`.
   (logstash, filebeat, kibana, elasticsearch, guacd, tomcat9).
 - **Misc one-offs** — `install_helm.sh` (adds the Helm apt repo and installs it), `disk_info.sh` (per
   block device `df` usage), `yaping.sh` (pings a target from multiple source IPs/interfaces to compare
-  ISP latency). `apt-key.gpg` is a vendored public apt-signing key (Google Artifact Registry), not a
-  secret.
+  ISP latency).
 
 ### House style for anything that mutates system state
 
