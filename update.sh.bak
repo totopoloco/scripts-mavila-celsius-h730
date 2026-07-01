@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+echo 'Update'
+sudo apt-get update
+echo 'Upgrade'
+time sudo apt-get dist-upgrade 
+echo 'Information machine'
+uname -a
+echo 'Information time'
+sudo timedatectl status
+echo 'Done.'

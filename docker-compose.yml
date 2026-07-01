@@ -1,0 +1,29 @@
+version: "3.9"   # latest stable version
+
+services:
+  postgres:
+    image: postgres:15-alpine      # lightweight official image
+    container_name: pg_demo
+    restart: unless-stopped
+    ports:
+      - "5432:5432"                # host:container
+    environment:
+      # -------------------------------------------------
+      # Required PostgreSQL env vars
+      # -------------------------------------------------
+      POSTGRES_USER: ${PG_USER:-demo_user}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-change_me}
+      POSTGRES_DB: ${PG_DATABASE:-sample_db}
+    volumes:
+      # Persist data between restarts
+      - pg_data:/var/lib/postgresql/data
+      # Run our init script on first start
+      - ./init-db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pg_data:

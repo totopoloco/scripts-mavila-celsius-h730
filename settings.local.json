@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sudo modprobe nvidia)",
+      "Bash(echo \"modprobe failed \\(rc=$?\\)\")",
+      "Bash(lsmod)",
+      "Bash(sudo dmesg)",
+      "Bash(nvidia-smi --version)",
+      "Bash(dpkg -l)",
+      "Bash(apt-mark showhold *)",
+      "Bash(apt-cache policy *)",
+      "Bash(chmod +x /home/mavila/scripts/fix-nvidia-kepler.sh)",
+      "Bash(bash -n /home/mavila/scripts/fix-nvidia-kepler.sh)",
+      "Bash(/home/mavila/scripts/fix-nvidia-kepler.sh --dry-run)",
+      "Bash(apt-cache depends *)",
+      "Bash(apt-cache search *)",
+      "Bash(apt-cache show *)",
+      "Bash(dpkg-query -W -f='${Package} ${Version} ${Status}\\\\n' 'nvidia*' 'libnvidia*' 'xserver-xorg-video-nvidia*')",
+      "Bash(dkms status *)",
+      "Bash(dpkg -l 'linux-generic*' 'linux-image-generic*' 'linux-headers-generic*')",
+      "Bash(awk '/^ii/ {printf \" %-40s %s\\\\n\", $2, $3}')",
+      "Bash(dpkg -l 'linux-image-*')",
+      "Bash(awk '/^ii/ {print \" \"$2\" \"$3}')",
+      "Bash(dpkg -l 'linux-generic-hwe-24.04' 'linux-image-generic-hwe-24.04')",
+      "Bash(awk '/^ii/ {print \" HWE: \"$2}')",
+      "Bash(dpkg -l 'linux-generic')",
+      "Bash(awk '/^ii/ {print \"  GA:  \"$2}')",
+      "Bash(chmod +x /home/mavila/scripts/switch-to-nouveau.sh)",
+      "Bash(bash -n /home/mavila/scripts/switch-to-nouveau.sh)",
+      "Bash(/home/mavila/scripts/switch-to-nouveau.sh --dry-run)",
+      "Bash(bash *)",
+      "Bash(shellcheck --severity=warning /home/mavila/scripts/switch-to-nouveau.sh)"
+    ]
+  }
+}
