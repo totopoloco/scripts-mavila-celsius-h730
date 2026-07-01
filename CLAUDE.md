@@ -59,8 +59,8 @@ at the top of `switch-to-nouveau.sh` must match what `fix-nvidia-kepler.sh` actu
 
 ### performance-tuning.sh: apply / undo / status / boot-apply lifecycle
 
-The largest script in the repo (~800 lines). It has four modes (`--apply` default, `--undo`, `--status`,
-`--boot-apply`) and is designed to be fully reversible:
+The largest script in the repo (~900 lines). It has five modes (`--apply` default, `--undo`, `--status`,
+`--boot-apply`, `--iobench`); `--apply`/`--undo`/`--boot-apply` are designed to be fully reversible:
 
 1. Before changing anything, `take_snapshot()` captures every runtime knob it's about to touch
    (governor, USB autosuspend, SATA ALPM, Wi-Fi powersave, gsettings, sysctl values) into
@@ -73,38 +73,59 @@ The largest script in the repo (~800 lines). It has four modes (`--apply` defaul
    systemd unit that runs it with `--boot-apply`.
 4. `--undo` reverses all of the above from the snapshot and removes the installed copy + unit.
 
+`--iobench` sits outside that snapshot/undo lifecycle entirely — it's a read-only diagnostic (a per-disk
+`hdparm -Tt` throughput probe reported via friendly device names and a plain-English speed verdict, since
+raw MB/sec is meaningless without knowing hdparm under-reports SSDs). It still escalates to root via
+`require_root` for a real run, the same way `--apply`/`--undo` do, because opening the raw block devices
+needs it.
+
 Any new persistent system tuning in this repo should follow the same shape: snapshot-before-mutate,
 drop-in files over in-place edits, explicit `--undo`.
 
 ### Script groups
 
-- **App launchers** (`brave.sh`, `chrome.sh`, `edge.sh`, `mongodb.sh`, `postman.sh`, `signal.sh`,
+Same split as README.md: scripts hardcoded to this machine's hardware/setup vs. scripts that would run
+unmodified on any Debian/Ubuntu box. (`fix-nvidia-kepler.sh`, `switch-to-nouveau.sh`, `update.sh`, and
+`performance-tuning.sh` are also machine-specific — already covered above under the Kepler GPU
+constraint, not repeated here.)
+
+**Specific to this machine**
+- App launchers (`brave.sh`, `chrome.sh`, `edge.sh`, `mongodb.sh`, `postman.sh`, `signal.sh`,
   `skype.sh`, `slack.sh`, `sublime.sh`, `teams.sh`, `telegram.sh`, `thunderbird.sh`, `vscode.sh`) — all
   follow the same one-line-body template: set `MY_FACTOR` (a per-app HiDPI `--force-device-scale-factor`
   tuned by eye for this display), launch the app backgrounded with output silenced. Match this template
   exactly when adding a launcher for a new app. `vivaldi-openvalue.sh` is a variant of this pattern that
   launches the browser as a separate OS user (`openvalue`) via `sudo -u` + a temporary `xhost` grant, for
   keeping a work profile isolated from the main session.
-- **Package/system maintenance** — `update.sh` (see above), `update.sh.bak` (superseded, simpler
-  predecessor of `update.sh`; kept for reference, not actively used), `remove_old_kernels.sh` (dry-run
-  unless called with `exec`), `cleanup_models.sh` (prunes local Ollama models against a keep-list),
-  `move_docker_images.sh` (migrates images between the `default` and `desktop-linux` docker contexts via
-  save/gzip/load), `docker-nuke.sh` (stops/removes **all** containers, images, and volumes with no
-  confirmation prompt — treat as destructive, don't suggest running it casually).
-- **Thermal/power diagnostics** — `thermal-info.sh` and `temp.sh` overlap (both read `sensors` +
-  `/sys/class/thermal`); `temp.sh` is the newer, terser one and adds a `-w` watch loop.
+- `thermal-info.sh` — CPU/thermal-zone/thermald reporting written for this chassis's sensors. Overlaps in
+  purpose with the generic `temp.sh` below, but assumes nothing machine-specific the way this one does.
+- `monitoring.sh` — start/stop/restart/status wrapper (via `systemctl`) around the specific self-hosted
+  log/monitoring stack installed on this box (logstash, filebeat, kibana, elasticsearch, guacd, tomcat9).
+  Will error outright on any machine without those exact services.
+- `yaping.sh` — pings a target from multiple source IPs/interfaces to compare ISP latency; the IPs are
+  this network's.
+
+**Generic (portable to any Debian/Ubuntu box)**
+- `update.sh.bak` — superseded predecessor of `update.sh`; unlike it, has no GPU-specific check, so it's
+  actually the more portable of the two.
+- `remove_old_kernels.sh` (dry-run unless called with `exec`), `cleanup_models.sh` (prunes local Ollama
+  models against a keep-list — the mechanism is generic, only the list is personal), `move_docker_images.sh`
+  (migrates images between the `default` and `desktop-linux` docker contexts via save/gzip/load),
+  `docker-nuke.sh` (stops/removes **all** containers, images, and volumes with no confirmation prompt —
+  treat as destructive, don't suggest running it casually), `install_helm.sh` (adds the Helm apt repo and
+  installs it).
+- `temp.sh` — quick CPU/thermal-zone report (`-w` watches continuously); plain sysfs/lm-sensors reads.
+- `disk_info.sh` — used/free space per *mounted volume* (not per block device — the original version
+  looped over raw block devices like `/dev/sda`, which usually aren't themselves mounted, so it reported
+  little of use). Renders a colored usage bar per volume and filters to real filesystem types so
+  tmpfs/overlay/squashfs (snap's loop mounts) don't clutter the output.
 - **Secrets** (`pass_display.sh`, `pass_search.sh`) — both wrap a `pass-cli item list <vault> --output
   json | jq ...` pipeline against a password-manager CLI. `pass_display` fetches one login's full
   credentials by exact title match; `pass_search` does a case-insensitive substring search and prints a
   title/email/username table without exposing passwords. Follow this jq-over-pass-cli-json shape for any
   new credential-lookup script, and keep password values out of the search/list variant.
-- **Local infra sandbox** — `docker-compose.yml` + `postgres-docker/init-db/01-create-sample.sql` spin up
-  a disposable Postgres container seeded with sample data on first boot; `monitoring.sh` is a
-  start/stop/restart/status wrapper (via `systemctl`) around a self-hosted log/monitoring stack
-  (logstash, filebeat, kibana, elasticsearch, guacd, tomcat9).
-- **Misc one-offs** — `install_helm.sh` (adds the Helm apt repo and installs it), `disk_info.sh` (per
-  block device `df` usage), `yaping.sh` (pings a target from multiple source IPs/interfaces to compare
-  ISP latency).
+- `docker-compose.yml` + `postgres-docker/init-db/01-create-sample.sql` — disposable Postgres container
+  seeded with sample data on first boot.
 
 ### House style for anything that mutates system state
 
