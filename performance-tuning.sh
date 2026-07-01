@@ -40,6 +40,7 @@
 #   ./performance-tuning.sh --undo           # restore original state (needs root)
 #   ./performance-tuning.sh --undo --dry-run # show what undo would do
 #   ./performance-tuning.sh --status         # show current vs desired for key knobs
+#   ./performance-tuning.sh --iobench        # read-only disk throughput probe (needs root)
 #   ./performance-tuning.sh --help
 #
 #   apply/undo escalate with sudo automatically if not run as root.
@@ -215,6 +216,20 @@ rotational_disks() {
     [ -e "$d" ] || continue
     [ "$(cat "$d/queue/rotational" 2>/dev/null)" = "1" ] || continue
     echo "/dev/$(basename "$d")"
+  done
+}
+
+# Enumerate whole-disk block devices as /dev/<name> (physical disks only --
+# skips loopback, zram, device-mapper, and md/RAID devices).
+physical_disks() {
+  local d name
+  for d in /sys/block/*; do
+    [ -e "$d" ] || continue
+    name="$(basename "$d")"
+    case "$name" in
+      loop*|zram*|dm-*|md*) continue ;;
+    esac
+    echo "/dev/$name"
   done
 }
 
@@ -766,10 +781,98 @@ do_status() {
 }
 
 #==============================================================================
+# IOBENCH  (read-only disk throughput probe; needs root to open the raw devices)
+#==============================================================================
+
+# Friendly names for the disks on THIS machine (checked against `lsblk -dn -o
+# NAME,VENDOR,MODEL,SIZE,ROTA,TRAN` -- raw VENDOR/MODEL strings are too messy
+# to show as-is: e.g. sda's VENDOR is just "ATA", sdc's is a truncated model
+# number). Anything not listed falls back to disk_generic_label().
+disk_label() {
+  case "$(basename "$1")" in
+    sda) echo "Internal SSD -- Samsung 512GB (SATA)" ;;
+    sdb) echo "External SSD -- Samsung T7 (USB)" ;;
+    sdc) echo "External HDD -- Seagate 3TB (USB)" ;;
+    *)   disk_generic_label "$1" ;;
+  esac
+}
+
+disk_generic_label() {
+  local dev="$1" name kind bus model size
+  name="$(basename "$dev")"
+  [ "$(cat "/sys/block/$name/queue/rotational" 2>/dev/null)" = "1" ] && kind="HDD" || kind="SSD"
+  case "$(lsblk -dn -o TRAN "$dev" 2>/dev/null)" in
+    usb) bus="External" ;;
+    *)   bus="Internal" ;;
+  esac
+  model="$(lsblk -dn -o MODEL "$dev" 2>/dev/null | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+  size="$(lsblk -dn -o SIZE "$dev" 2>/dev/null | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+  printf '%s %s -- %s (%s)' "$bus" "$kind" "${model:-unknown model}" "${size:-unknown size}"
+}
+
+# Plain-English verdict for a buffered-disk-read MB/sec figure. hdparm times a
+# single-queue-depth sequential read (no NCQ/parallel I/O), which is realistic
+# for a spinning disk but systematically under-reports SSDs -- so SSD and HDD
+# get different bands. Returns "n/a" if $1 isn't a plain number.
+rate_buffered() {
+  awk -v v="$1" -v rot="$2" 'BEGIN {
+    if (v !~ /^[0-9]+(\.[0-9]+)?$/) { print "n/a"; exit }
+    if (rot == "1") {
+      if      (v < 80)  print "slow for a spinning disk"
+      else if (v < 180) print "typical spinning-disk speed"
+      else              print "fast for a spinning disk"
+    } else {
+      if      (v < 200) print "slow for an SSD"
+      else if (v < 350) print "OK for an SSD"
+      else              print "fast SSD"
+    }
+  }'
+}
+
+do_iobench() {
+  hdr "Disk I/O throughput (read-only benchmark)"
+
+  if ! command -v hdparm >/dev/null 2>&1; then
+    err "hdparm not installed; install with: apt install hdparm"
+    return 1
+  fi
+
+  local dev name line cached buffered rotational found=0
+  while read -r dev; do
+    [ -n "$dev" ] || continue
+    found=1
+    name="$(basename "$dev")"
+    echo
+    echo "$name -- $(disk_label "$dev")"
+    if [ "$DRYRUN" = 1 ]; then
+      dry "run: hdparm -Tt $dev"
+      continue
+    fi
+    if ! line="$(hdparm -Tt "$dev" 2>&1)"; then
+      warn "could not benchmark $name (permission denied, or unsupported over this bus)"
+      continue
+    fi
+    cached="$(sed -n 's/^.*cached reads:.*=[[:space:]]*//p' <<<"$line")"
+    buffered="$(sed -n 's/^.*buffered disk reads:.*=[[:space:]]*//p' <<<"$line")"
+    rotational="$(cat "/sys/block/$name/queue/rotational" 2>/dev/null)"
+    show_one "cached reads" "${cached:-n/a}  (memory speed, not disk-specific)"
+    show_one "buffered disk reads" "${buffered:-n/a}  ($(rate_buffered "${buffered%% *}" "$rotational"))"
+  done < <(physical_disks)
+
+  echo
+  if [ "$found" = 0 ]; then
+    warn "no physical disks found to benchmark"
+  elif [ "$DRYRUN" != 1 ]; then
+    info "hdparm under-reports SSDs (no queued I/O) -- treat \"slow for an SSD\" as a"
+    info "hint to check link speed/cabling/load, not a hard diagnosis."
+  fi
+}
+
+#==============================================================================
 # Argument parsing & dispatch
 #==============================================================================
 usage() {
-  sed -n '2,55p' "$SELF_REALPATH" | sed 's/^#\{0,1\} \{0,1\}//'
+  sed -n '2,56p' "$SELF_REALPATH" | sed 's/^#\{0,1\} \{0,1\}//'
 }
 
 parse_args() {
@@ -779,6 +882,7 @@ parse_args() {
       --apply)      ACTION="apply" ;;
       --undo)       ACTION="undo" ;;
       --status)     ACTION="status" ;;
+      --iobench)    ACTION="iobench" ;;
       --boot-apply) ACTION="boot-apply" ;;
       --dry-run|-n) DRYRUN=1 ;;
       --help|-h)    ACTION="help" ;;
@@ -794,6 +898,9 @@ main() {
   case "$ACTION" in
     help)   usage ;;
     status) do_status ;;
+    iobench)
+      [ "$DRYRUN" = 1 ] || require_root
+      do_iobench ;;
     boot-apply)
       require_root
       apply_runtime ;;        # quiet path used by the systemd unit at boot
