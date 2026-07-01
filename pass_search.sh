@@ -8,11 +8,12 @@ fi
 VAULT="$1"
 TITLE="$2"
 
-pass-cli item list "$VAULT" --output json | jq -r --arg title "$TITLE" '
+pass-cli item list "$VAULT" --output json --show-secrets | jq -r --arg title "$TITLE" '
   ["TITLE", "EMAIL", "USERNAME"],
   ["-----", "--------", "-----"],
   (
     .items[]
+    | select(.content.content.Login != null)
     | select(.content.title | test($title; "i"))
     | [.content.title, .content.content.Login.email, .content.content.Login.username]
   )

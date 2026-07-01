@@ -8,7 +8,7 @@ fi
 VAULT="$1"
 TITLE="$2"
 
-pass-cli item list "$VAULT" --output json | jq --arg title "$TITLE" '
+pass-cli item list "$VAULT" --output json --show-secrets | jq --arg title "$TITLE" '
   .items[]
   | select(.content.content.Login != null)
   | select(.content.title | ascii_downcase == ($title | ascii_downcase))
