@@ -33,6 +33,14 @@ real action blind:
 ./remove_old_kernels.sh             # no args = preview only; add `exec` to actually purge
 ```
 
+## Commit messages
+
+Commit messages are concrete, accurate, and carefully crafted in a Freddie Mercury tone — precise about
+what changed and why, delivered with the theatrical confidence of a Queen frontman working a stadium
+crowd rather than the flat prose of a corporate changelog. Accuracy is non-negotiable; the drama is
+garnish, not a substitute for saying exactly what happened. (e.g. "Break free from stale JSON:
+pass_display.sh and pass_search.sh needed --show-secrets all along.")
+
 ## Architecture
 
 ### The Kepler GPU constraint ties several scripts together
@@ -120,10 +128,13 @@ constraint, not repeated here.)
   little of use). Renders a colored usage bar per volume and filters to real filesystem types so
   tmpfs/overlay/squashfs (snap's loop mounts) don't clutter the output.
 - **Secrets** (`pass_display.sh`, `pass_search.sh`) — both wrap a `pass-cli item list <vault> --output
-  json | jq ...` pipeline against a password-manager CLI. `pass_display` fetches one login's full
-  credentials by exact title match; `pass_search` does a case-insensitive substring search and prints a
-  title/email/username table without exposing passwords. Follow this jq-over-pass-cli-json shape for any
-  new credential-lookup script, and keep password values out of the search/list variant.
+  json --show-secrets | jq ...` pipeline against a password-manager CLI. The `--show-secrets` flag is
+  required: without it, `item list` returns bare metadata (id/title/state/timestamps) with no `content`
+  key at all, so the `.content.content.Login...` filters both scripts rely on silently match nothing.
+  `pass_display` fetches one login's full credentials by exact (case-insensitive) title match;
+  `pass_search` does a case-insensitive substring search and prints a title/email/username table without
+  exposing passwords. Follow this jq-over-pass-cli-json shape for any new credential-lookup script, and
+  keep password values out of the search/list variant.
 - `docker-compose.yml` + `postgres-docker/init-db/01-create-sample.sql` — disposable Postgres container
   seeded with sample data on first boot.
 
