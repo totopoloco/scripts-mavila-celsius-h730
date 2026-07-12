@@ -61,6 +61,8 @@ by eye for this display; the factor would need re-tuning for a different monitor
   lm-sensors, no machine-specific assumptions.
 - `disk_info.sh` — used/free space per mounted volume, with a colored usage bar (real filesystems only;
   skips tmpfs/overlay/squashfs noise).
+- `mem_top.sh` — top memory-consuming processes, RSS shown in M/G instead of raw KB or bare `%MEM`
+  (`-w` watches continuously, same pattern as `temp.sh`).
 
 **Secrets**
 - `pass_display.sh` — fetch one login's full credentials by exact title match (via `pass-cli` + `jq`).

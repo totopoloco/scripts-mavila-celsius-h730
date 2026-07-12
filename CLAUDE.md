@@ -127,6 +127,9 @@ constraint, not repeated here.)
   looped over raw block devices like `/dev/sda`, which usually aren't themselves mounted, so it reported
   little of use). Renders a colored usage bar per volume and filters to real filesystem types so
   tmpfs/overlay/squashfs (snap's loop mounts) don't clutter the output.
+- `mem_top.sh` — top memory-consuming processes by RSS, converted to M/G instead of raw KB or a bare
+  `%MEM` figure (same rationale as `disk_info.sh`'s bars: percentages/KB alone don't tell you much without
+  doing the math yourself). `-w` watches continuously, same pattern as `temp.sh`.
 - **Secrets** (`pass_display.sh`, `pass_search.sh`) — both wrap a `pass-cli item list <vault> --output
   json --show-secrets | jq ...` pipeline against a password-manager CLI. The `--show-secrets` flag is
   required: without it, `item list` returns bare metadata (id/title/state/timestamps) with no `content`
