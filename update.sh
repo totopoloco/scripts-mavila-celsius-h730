@@ -96,6 +96,12 @@ make_bar() {
   BAR_DISP="[${color}${_HASH:0:$filled}${RESET}${_DASH:0:$empty}] ${pct}%"
 }
 
+# Real filesystems only (same list as disk_info.sh) -- skips tmpfs, overlay,
+# squashfs (snap loop mounts), proc, and other pseudo mounts.
+DISK_FS_TYPES=(ext2 ext3 ext4 xfs btrfs vfat exfat ntfs ntfs3 f2fs zfs)
+DISK_TYPE_ARGS=()
+for _fs in "${DISK_FS_TYPES[@]}"; do DISK_TYPE_ARGS+=(-t "$_fs"); done
+
 fmt_dur() {
   local s="$1" h m
   h=$(( s / 3600 )); s=$(( s % 3600 ))
@@ -274,9 +280,15 @@ box_row "Total"         "$(fmt_dur $((END_EPOCH - START_EPOCH)))"
 box_bottom
 echo
 
-box_top "Disk (/)"
-make_bar "$DISK_BEFORE_PCT"; box_row "Before" "$BAR_PLAIN" "$BAR_DISP"
-make_bar "$DISK_AFTER_PCT";  box_row "After"  "$BAR_PLAIN" "$BAR_DISP"
+box_top "Disks"
+make_bar "$DISK_BEFORE_PCT"; box_row "/ (before)" "$BAR_PLAIN" "$BAR_DISP"
+make_bar "$DISK_AFTER_PCT";  box_row "/ (after)"  "$BAR_PLAIN" "$BAR_DISP"
+while IFS=' ' read -r d_target d_fstype d_size d_used d_avail d_pcent; do
+  [ "$d_target" = "/" ] && continue
+  make_bar "$d_pcent"
+  box_row "$(trunc "${d_target} (${d_fstype})" "$LABEL_W")" \
+    "${d_used}/${d_size}  ${BAR_PLAIN}" "${d_used}/${d_size}  ${BAR_DISP}"
+done < <(df -h "${DISK_TYPE_ARGS[@]}" --output=target,fstype,size,used,avail,pcent 2>/dev/null | tail -n +2 | tr -s ' ' | sed -E 's/^ //')
 box_bottom
 echo
 
