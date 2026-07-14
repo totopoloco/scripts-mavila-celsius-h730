@@ -184,7 +184,7 @@ if _lts_available; then
   box_line "  2. Reboot and confirm the desktop still works on nouveau"
   box_line "  3. Then:    sudo do-release-upgrade"
   box_line ""
-  box_line "This update (apt full-upgrade) stays on the current release"
+  box_line "This update (apt-get dist-upgrade) stays on the current release"
   box_line "and is safe to continue. Abort only if you want to deal with"
   box_line "the nouveau switch right now."
   box_bottom
@@ -204,7 +204,7 @@ T_UPDATE=$(date +%s)
 # Full upgrade
 #───────────────────────────────────────────────────────────────────────────
 section "Full upgrade"
-sudo DEBIAN_FRONTEND=noninteractive apt full-upgrade -y 2>&1 | tee "$UPGRADE_LOG"
+sudo DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y 2>&1 | tee "$UPGRADE_LOG"
 T_UPGRADE=$(date +%s)
 
 apt_summary_counts "$UPGRADE_LOG"
@@ -214,7 +214,7 @@ UPG_UPGRADED="$n_upg"; UPG_NEW="$n_new"; UPG_KEEP="$n_keep"
 # Cleanup
 #───────────────────────────────────────────────────────────────────────────
 section "Cleanup"
-sudo apt autoremove -y 2>&1 | tee "$AUTOREMOVE_LOG"
+sudo apt-get autoremove -y 2>&1 | tee "$AUTOREMOVE_LOG"
 apt_summary_counts "$AUTOREMOVE_LOG"
 AUTOREMOVED="$n_rm"
 sudo apt autoclean -y
