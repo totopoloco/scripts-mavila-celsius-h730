@@ -107,6 +107,10 @@ constraint, not repeated here.)
   keeping a work profile isolated from the main session.
 - `thermal-info.sh` — CPU/thermal-zone/thermald reporting written for this chassis's sensors. Overlaps in
   purpose with the generic `temp.sh` below, but assumes nothing machine-specific the way this one does.
+- `fix-mic-input.sh` — diagnoses (and with `--fix`, repairs) GNOME Settings showing no microphone: the
+  built-in mic (ALC282 on the Intel PCH codec) is fine at the kernel/ALSA level, but WirePlumber's
+  `alsa_input.pci-*.analog-stereo` node for it can get stuck or flap after a startup race. `--fix`
+  restarts the user pipewire/pipewire-pulse/wireplumber services — no reboot needed, no sudo.
 - `monitoring.sh` — start/stop/restart/status wrapper (via `systemctl`) around the specific self-hosted
   log/monitoring stack installed on this box (logstash, filebeat, kibana, elasticsearch, guacd, tomcat9).
   Will error outright on any machine without those exact services.

@@ -29,6 +29,10 @@ this exact GPU.
   figure.
 - `thermal-info.sh` — CPU/thermal-zone temperature and thermald-config reporting, written for this
   chassis's sensors and trip points.
+- `fix-mic-input.sh` — diagnoses (and with `--fix`, restarts) a recurring PipeWire/WirePlumber bug where
+  the built-in mic (Realtek ALC282 on the Intel PCH codec) drops out of GNOME Settings > Sound > Input.
+  Kernel/ALSA and the hardware mixer are unaffected; confirmed to need only a user-level service restart,
+  not a reboot.
 - `update.sh` — daily `apt update && full-upgrade`; warns before an LTS upgrade if
   `switch-to-nouveau.sh` hasn't been run yet (see GPU note above).
 
