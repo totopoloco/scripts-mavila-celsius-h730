@@ -77,6 +77,15 @@ by eye for this display; the factor would need re-tuning for a different monitor
 - `docker-compose.yml` + `postgres-docker/init-db/01-create-sample.sql` — disposable Postgres container
   seeded with sample data on first boot.
 
+**Desktop / GDM**
+- `gdm-hostname-banner.sh` — shows the live hostname on the GDM login screen banner. Nothing is
+  hardcoded: a systemd `ExecStartPre` override on `gdm.service` regenerates the dconf banner text from
+  `hostname` right before every GDM start, and a NetworkManager dispatcher hook regenerates it again the
+  moment DHCP actually assigns a hostname — needed because on this host GDM starts several seconds
+  before NetworkManager finishes DHCP, so the boot hook alone captured NetworkManager's
+  `localhost.localdomain` placeholder instead of the real name. `--apply` / `--undo` / `--status` /
+  `--dry-run`.
+
 ## Validating a script
 
 There's no build system; scripts are standalone. Check syntax with `bash -n script.sh`, lint with

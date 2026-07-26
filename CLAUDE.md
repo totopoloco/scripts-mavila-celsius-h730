@@ -144,6 +144,15 @@ constraint, not repeated here.)
   keep password values out of the search/list variant.
 - `docker-compose.yml` + `postgres-docker/init-db/01-create-sample.sql` — disposable Postgres container
   seeded with sample data on first boot.
+- `gdm-hostname-banner.sh` — shows the live hostname on the GDM login screen. The dconf banner text is
+  never a hand-typed literal: a systemd `ExecStartPre` drop-in on `gdm.service` regenerates it from
+  `hostname` immediately before every GDM start (the `-` prefix on that ExecStartPre means a bug here
+  can never block GDM from starting). That alone wasn't enough on this host — GDM starts before
+  NetworkManager finishes DHCP, so the boot hook only ever saw NetworkManager's transient
+  `localhost.localdomain` placeholder, never the real assigned hostname (confirmed via journalctl
+  timestamps). A second hook, a NetworkManager dispatcher script firing on the `hostname` dispatch
+  event, re-derives the banner the moment DHCP actually sets it. `--apply`/`--undo`/`--status`/
+  `--dry-run`, apply/undo self-elevate via sudo like `performance-tuning.sh`.
 
 ### House style for anything that mutates system state
 
