@@ -147,6 +147,7 @@ _lts_available() {
 #───────────────────────────────────────────────────────────────────────────
 TMP_DIR="$(mktemp -d -t update-sh.XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+PREFLIGHT_LOG="$TMP_DIR/preflight-upgrade.log"
 UPGRADE_LOG="$TMP_DIR/full-upgrade.log"
 AUTOREMOVE_LOG="$TMP_DIR/autoremove.log"
 SNAP_LOG="$TMP_DIR/snap-refresh.log"
@@ -170,6 +171,33 @@ box_bottom
 #───────────────────────────────────────────────────────────────────────────
 section "Package lists"
 sudo apt update -y
+
+sudo apt-get dist-upgrade -s 2>&1 | tee "$PREFLIGHT_LOG" >/dev/null || true
+apt_summary_counts "$PREFLIGHT_LOG"
+PRE_UPGRADED="$n_upg"; PRE_NEW="$n_new"; PRE_REMOVE="$n_rm"; PRE_KEEP="$n_keep"
+
+DL_SIZE=$(sed -nE 's/^Need to get (.*) of archives\.?$/\1/p' "$PREFLIGHT_LOG") || DL_SIZE=""
+[ -z "$DL_SIZE" ] && DL_SIZE="0 B"
+
+DISK_RAW=$(sed -nE 's/^After this operation, (.*)\.$/\1/p' "$PREFLIGHT_LOG") || DISK_RAW=""
+if [ -n "$DISK_RAW" ]; then
+  IFS=' ' read -r _dsz _dunit _ <<<"$DISK_RAW"
+  if [[ "$DISK_RAW" == *freed ]]; then DISK_DELTA="${_dsz} ${_dunit} freed"
+  else                                  DISK_DELTA="${_dsz} ${_dunit} used"
+  fi
+else
+  DISK_DELTA="no change"
+fi
+
+echo
+box_top "Available Updates"
+box_row "To upgrade"      "$PRE_UPGRADED"
+box_row "Newly installed" "$PRE_NEW"
+box_row "To remove"       "$PRE_REMOVE"
+box_row "Held back"       "$PRE_KEEP"
+box_row "Download size"   "$DL_SIZE"
+box_row "Disk space"      "$DISK_DELTA"
+box_bottom
 
 if _lts_available; then
   BOX_COLOR="$YELLOW"
