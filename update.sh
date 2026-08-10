@@ -271,6 +271,17 @@ UPTIME_STR="$(trunc "$UPTIME_STR" 40)"
 TIMEZONE="$(timedatectl show -p Timezone --value 2>/dev/null)" || TIMEZONE="n/a"
 NTP_SYNCED="$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" || NTP_SYNCED="n/a"
 
+INTERNAL_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -nE 's/.*src ([0-9.]+).*/\1/p') || INTERNAL_IP=""
+[ -z "$INTERNAL_IP" ] && INTERNAL_IP="n/a"
+
+# OpenDNS resolver first (fast, no HTTP dependency); ifconfig.me as fallback.
+EXTERNAL_IP=$(dig +short +time=3 +tries=1 myip.opendns.com @resolver1.opendns.com 2>/dev/null) || EXTERNAL_IP=""
+[[ "$EXTERNAL_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || EXTERNAL_IP=$(curl -fs4 --max-time 3 https://ifconfig.me 2>/dev/null) || EXTERNAL_IP=""
+if [ -z "$EXTERNAL_IP" ]; then
+  EXTERNAL_IP="unavailable"
+  warn "Could not determine external IP (network down?)"
+fi
+
 section "Summary"
 
 box_top "Update Summary"
@@ -325,6 +336,8 @@ box_row "Host"       "$HOSTNAME"
 box_row "OS release" "$OS_PRETTY"
 box_row "Kernel"     "$(uname -r)"
 box_row "Uptime"     "$UPTIME_STR"
+box_row "Internal IP" "$INTERNAL_IP"
+box_row "External IP" "$EXTERNAL_IP"
 box_row "Timezone"   "$TIMEZONE"
 if [ "$NTP_SYNCED" = "yes" ]; then
   box_row "NTP synced" "yes" "${GREEN}yes${RESET}"
