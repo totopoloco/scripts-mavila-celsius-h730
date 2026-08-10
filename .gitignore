@@ -427,3 +427,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Local throwaway databases (e.g. nmemory install-verification runs)
+*.sqlite3
