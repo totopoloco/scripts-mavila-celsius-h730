@@ -252,8 +252,27 @@ T_CLEANUP=$(date +%s)
 # Snap refresh
 #───────────────────────────────────────────────────────────────────────────
 section "Updating Snaps"
-sudo snap refresh 2>&1 | tee "$SNAP_LOG"
-N_SNAP_REFRESHED=$(grep -cE ' refreshed$' "$SNAP_LOG") || N_SNAP_REFRESHED=0
+# SNAP_REEXEC=0: skip snapd's re-exec into the bundled snapd-snap copy of
+# itself. On this machine that copy can't resolve libX11 (pulled in by
+# Citrix App Protection's global /etc/ld.so.preload) because its private
+# ld.so.cache doesn't know about Ubuntu's multiarch lib paths. The daemon
+# gets this same setting from /var/lib/snapd/environment/snapd.conf, but
+# that file only applies to snapd.service, not this ad-hoc client call.
+if sudo SNAP_REEXEC=0 snap refresh 2>&1 | tee "$SNAP_LOG"; then
+  N_SNAP_REFRESHED=$(grep -cE ' refreshed$' "$SNAP_LOG") || N_SNAP_REFRESHED=0
+else
+  if grep -q 'libX11.so.6: cannot open shared object file' "$SNAP_LOG"; then
+    warn "snap/snapd can't load libX11 -- Citrix App Protection's /etc/ld.so.preload"
+    warn "breaks snapd's re-exec into its bundled (snapd-snap) copy of itself."
+    warn "fix (one-time, needs sudo):"
+    warn "  echo 'SNAP_REEXEC=0' | sudo tee /var/lib/snapd/environment/snapd.conf"
+    warn "  sudo systemctl daemon-reload && sudo systemctl reset-failed snapd.service"
+    warn "  sudo systemctl restart snapd.service"
+  else
+    warn "snap refresh failed -- continuing without it (see output above)"
+  fi
+  N_SNAP_REFRESHED=0
+fi
 T_SNAP=$(date +%s)
 
 #───────────────────────────────────────────────────────────────────────────
