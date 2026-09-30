@@ -58,7 +58,10 @@ breaks `nvidia-smi`. This single fact drives four scripts:
   the apt pins/holds `fix-nvidia-kepler.sh` created.
 - `update.sh` — the everyday `apt update && apt full-upgrade` driver. Before upgrading, it checks whether
   a new Ubuntu LTS is available and, if so, warns to run `switch-to-nouveau.sh` first and reboot into a
-  working nouveau desktop *before* `do-release-upgrade`.
+  working nouveau desktop *before* `do-release-upgrade`. Its closing summary ends with a Graphics box
+  (GPUs and drivers, the offload card's power state, GL renderer, session, displays, and whether the
+  graphics DKMS modules are built for the newest kernel). Those probes read sysfs/udev, never `lspci`,
+  and query the NVIDIA card only while it reads `active`, so they can't wake a runtime-suspended card.
 - `performance-tuning.sh` — unrelated to the driver bug itself, but its `apply_runtime` step also touches
   GPU-adjacent power settings (PCIe ASPM) on the same box.
 

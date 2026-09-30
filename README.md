@@ -38,7 +38,9 @@ this exact GPU.
   Kernel/ALSA and the hardware mixer are unaffected; confirmed to need only a user-level service restart,
   not a reboot.
 - `update.sh` — daily `apt update && full-upgrade`; warns before an LTS upgrade if
-  `switch-to-nouveau.sh` hasn't been run yet (see GPU note above).
+  `switch-to-nouveau.sh` hasn't been run yet (see GPU note above). The closing summary includes a
+  Graphics box: GPUs and their drivers, the offload card's power state, GL renderer, session type,
+  connected displays, and whether the graphics DKMS modules are built for the newest kernel.
 
 **App launchers** — background-launch the app with a per-app HiDPI `--force-device-scale-factor` tuned
 by eye for this display; the factor would need re-tuning for a different monitor.

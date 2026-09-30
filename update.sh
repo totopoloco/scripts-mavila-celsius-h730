@@ -6,7 +6,8 @@
 #   - Warns before an available Ubuntu LTS release (Kepler GPU caveat --
 #     see fix-nvidia-kepler.sh / switch-to-nouveau.sh)
 #   - Prints a formatted recap: timing, package/snap counts, disk
-#     usage, reboot status, system info, and local weather
+#     usage, reboot status, system info, graphics (GPUs, drivers,
+#     GL renderer, session, displays, DKMS), and local weather
 # ───────────────────────────────────────────────────────────
 
 set -euo pipefail   # Exit on errors / undefined variables
@@ -140,6 +141,210 @@ _lts_available() {
   local out
   out=$(do-release-upgrade -c 2>&1) || true
   grep -qiE '^New release.*available' <<<"$out"
+}
+
+# ── Graphics info ──────────────────────────────────────────────────────────
+# Feeds the "Graphics" box in the summary. Best-effort cosmetics: every probe
+# may fail and its row is simply left out -- never worth failing an update
+# over. Two rules keep the probes from disturbing the hardware they describe:
+#   * Names and drivers come from udev/sysfs, never lspci. lspci reads PCI
+#     config space, which wakes a runtime-suspended NVIDIA card, and nouveau
+#     can power that card off between uses.
+#   * The card is only queried (nvidia-smi, hwmon) while it reads "active".
+
+GFX_W=$(( INNER - LABEL_W - 3 ))                  # widest value a box_row fits
+GFX_VITALS=""                                     # set by gfx_gpu_vitals
+GFX_NVSMI_FAILED=0                                # set by gfx_gpu_vitals
+GFX_DKMS=""; GFX_DKMS_KERNEL=""; GFX_DKMS_BAD=0   # set by gfx_dkms_summary
+
+# gfx_row <label> <value> [<color>]: a box_row with label and value clipped to
+# their columns; <color> (e.g. "$YELLOW") tints the value.
+gfx_row() {
+  local label plain
+  label="$(trunc "$1" "$LABEL_W")"
+  plain="$(trunc "$2" "$GFX_W")"
+  if [[ -n "${3:-}" ]]; then
+    box_row "$label" "$plain" "${3}${plain}${RESET}"
+  else
+    box_row "$label" "$plain"
+  fi
+}
+
+# gfx_gpu_name <pci-sysfs-dir>: short "Vendor Model" from the udev hwdb, e.g.
+# "NVIDIA Quadro K2100M"; falls back to the raw PCI id.
+gfx_gpu_name() {
+  local dev="$1" props vendor model
+  props="$(udevadm info -q property -p "$dev" 2>/dev/null)" || props=""
+  vendor="$(sed -n 's/^ID_VENDOR_FROM_DATABASE=//p' <<<"$props")"
+  model="$(sed -n 's/^ID_MODEL_FROM_DATABASE=//p' <<<"$props")"
+  vendor="${vendor% Corporation}"
+  if [[ "$model" =~ \[(.+)\] ]]; then model="${BASH_REMATCH[1]}"; fi
+  model="${model/ Integrated Graphics Controller/ iGPU}"
+  if [[ -n "$model" ]]; then
+    printf '%s' "${vendor:+$vendor }$model"
+  else
+    printf 'PCI %s:%s' "$(cat "$dev/vendor" 2>/dev/null)" "$(cat "$dev/device" 2>/dev/null)"
+  fi
+  return 0
+}
+
+# gfx_driver_desc <driver>: "nvidia 470.256.02 (proprietary)", "i915 (in-kernel)".
+gfx_driver_desc() {
+  local drv="$1" ver=""
+  if [[ -z "$drv" ]]; then printf 'no driver bound'; return 0; fi
+  ver="$(cat "/sys/module/$drv/version" 2>/dev/null)" || ver=""
+  case "$drv" in
+    nvidia) printf 'nvidia %s (proprietary)' "${ver:-?}" ;;
+    *)      printf '%s%s (in-kernel)' "$drv" "${ver:+ $ver}" ;;
+  esac
+  return 0
+}
+
+# gfx_gpu_vitals <pci-sysfs-dir> <driver>: sets GFX_VITALS to e.g.
+# "P8 · 52°C · 4/2002 MiB" (nvidia-smi) or "47°C" (nouveau's hwmon), and
+# GFX_NVSMI_FAILED=1 if nvidia-smi can't reach its driver. Call it only for a
+# card that reads "active": either probe would wake a suspended one.
+gfx_gpu_vitals() {
+  local dev="$1" drv="$2" out ps temp mem_used mem_total t
+  GFX_VITALS=""
+  if [[ "$drv" == nvidia ]]; then
+    if out="$(timeout 10 nvidia-smi -i "${dev##*/}" \
+        --query-gpu=pstate,temperature.gpu,memory.used,memory.total \
+        --format=csv,noheader,nounits 2>&1)"; then
+      IFS=', ' read -r ps temp mem_used mem_total <<<"$out"
+      GFX_VITALS="${ps} · ${temp}°C · ${mem_used}/${mem_total} MiB"
+    else
+      GFX_NVSMI_FAILED=1
+      GFX_VITALS="nvidia-smi: $(head -n1 <<<"$out")"
+    fi
+  else
+    for t in "$dev"/hwmon/hwmon*/temp1_input; do
+      temp="$(cat "$t" 2>/dev/null)" || continue
+      GFX_VITALS="$(( temp / 1000 ))°C"
+      break
+    done
+  fi
+  return 0
+}
+
+# gfx_dkms_summary: for the graphics DKMS modules (nvidia, evdi) sets GFX_DKMS
+# ("evdi 1.14.7, nvidia 470.256.02"), GFX_DKMS_KERNEL (newest installed kernel)
+# and GFX_DKMS_BAD=1 if any module is not installed for that kernel. That is
+# the failure that leaves a GPU without its driver after the next reboot.
+gfx_dkms_summary() {
+  local kern_new lines
+  GFX_DKMS=""; GFX_DKMS_KERNEL=""; GFX_DKMS_BAD=0
+  command -v dkms >/dev/null 2>&1 || return 0
+  kern_new="$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'linux-image-[0-9]*' 2>/dev/null \
+    | awk '$1 == "ii" { sub(/^linux-image-/, "", $2); print $2 }' | sort -V | tail -n1)" || kern_new=""
+  GFX_DKMS_KERNEL="${kern_new:-$(uname -r)}"
+  # "nvidia/470.256.02, 6.8.0-142-generic, x86_64: installed": fields split on / , :
+  lines="$(dkms status 2>/dev/null | awk -F'[/,:] *' -v k="$GFX_DKMS_KERNEL" '
+    $1 ~ /^(nvidia|evdi)/ && NF >= 5 {
+      seen[$1] = 1
+      if ($3 == k && $5 ~ /^installed/) have[$1] = $2
+    }
+    END { for (m in seen) print m, ((m in have) ? have[m] : "MISSING") }' | sort)" || lines=""
+  if [[ -n "$lines" ]]; then
+    GFX_DKMS="$(paste -sd, <<<"$lines" | sed 's/,/, /g')"
+    if [[ "$lines" == *MISSING* ]]; then GFX_DKMS_BAD=1; fi
+  fi
+  return 0
+}
+
+# graphics_box: the "Graphics" summary box (plus any warnings under it).
+graphics_box() {
+  local dev cls addr drv bv state val sess glx renderer glver
+  local c st name card conn ddrv
+  local -A conns=()
+  GFX_NVSMI_FAILED=0
+
+  box_top "Graphics"
+
+  # Every display-class PCI device: card, driver and -- for one that isn't the
+  # boot GPU (the NVIDIA offload card here) -- its runtime power state.
+  for dev in /sys/bus/pci/devices/*; do
+    cls="$(cat "$dev/class" 2>/dev/null)" || continue
+    [[ "$cls" == 0x03* ]] || continue
+    addr="${dev##*/}"
+    drv=""
+    if [[ -L "$dev/driver" ]]; then drv="$(basename "$(readlink "$dev/driver")")"; fi
+    gfx_row "GPU ${addr#0000:}" "$(gfx_gpu_name "$dev")"
+    gfx_row "  driver" "$(gfx_driver_desc "$drv")"
+    bv="$(cat "$dev/boot_vga" 2>/dev/null)" || bv=""
+    if [[ "$bv" != 1 ]]; then
+      state="$(cat "$dev/power/runtime_status" 2>/dev/null)" || state="unknown"
+      val="$state"
+      GFX_VITALS=""
+      if [[ "$state" == active ]]; then
+        gfx_gpu_vitals "$dev" "$drv"
+        if [[ -n "$GFX_VITALS" ]]; then val="$state · $GFX_VITALS"; fi
+      elif [[ "$state" == suspended ]]; then
+        val="suspended (idle)"
+      fi
+      if (( GFX_NVSMI_FAILED )); then gfx_row "  power" "$val" "$YELLOW"; else gfx_row "  power" "$val"; fi
+    fi
+  done
+
+  # Default OpenGL renderer (deliberately not DRI_PRIME=1: that would wake the
+  # offload card; ~/scripts/verify-nouveau.sh does the offload test).
+  glx="$(timeout 10 glxinfo -B 2>/dev/null)" || glx=""
+  renderer="$(sed -n 's/^OpenGL renderer string: //p' <<<"$glx")"
+  glver="$(sed -n 's/^OpenGL version string: //p' <<<"$glx")"
+  if [[ -n "$renderer" ]]; then
+    gfx_row "GL renderer" "$renderer"
+    if [[ "$glver" =~ ^([0-9.]+).*Mesa\ ([0-9.]+) ]]; then
+      gfx_row "OpenGL" "${BASH_REMATCH[1]} · Mesa ${BASH_REMATCH[2]}"
+    else
+      gfx_row "OpenGL" "$glver"
+    fi
+  else
+    gfx_row "GL renderer" "unavailable (needs glxinfo + DISPLAY)"
+  fi
+
+  sess="${XDG_SESSION_TYPE:-unknown}"
+  if [[ "$sess" == x11 ]] \
+     && grep -Eqs '^[[:space:]]*WaylandEnable[[:space:]]*=[[:space:]]*false' /etc/gdm3/custom.conf; then
+    sess="x11 (Wayland disabled in GDM)"
+  fi
+  gfx_row "Session" "$sess"
+
+  # Connected displays, grouped by the driver of the card that drives them.
+  # A connector has no "device" link of its own, so go through its card node.
+  for c in /sys/class/drm/card*-*; do
+    st="$(cat "$c/status" 2>/dev/null)" || continue
+    [[ "$st" == connected ]] || continue
+    name="${c##*/}"          # card5-eDP-1
+    card="${name%%-*}"       # card5
+    conn="${name#*-}"        # eDP-1
+    ddrv="?"
+    if [[ -L "/sys/class/drm/$card/device/driver" ]]; then
+      ddrv="$(basename "$(readlink "/sys/class/drm/$card/device/driver")")"
+    fi
+    conns[$ddrv]+="${conns[$ddrv]:+, }$conn"
+  done
+  if (( ${#conns[@]} )); then
+    for ddrv in $(printf '%s\n' "${!conns[@]}" | sort); do
+      gfx_row "Displays on $ddrv" "${conns[$ddrv]}"
+    done
+  fi
+
+  gfx_dkms_summary
+  if [[ -n "$GFX_DKMS" ]]; then
+    val="$GFX_DKMS"
+    if [[ "$GFX_DKMS_KERNEL" != "$(uname -r)" ]]; then val="${GFX_DKMS_KERNEL%-generic}: $val"; fi
+    if (( GFX_DKMS_BAD )); then gfx_row "Graphics DKMS" "$val" "$RED"; else gfx_row "Graphics DKMS" "$val"; fi
+  fi
+
+  box_bottom
+
+  if (( GFX_DKMS_BAD )); then
+    warn "DKMS has no built graphics module for kernel ${GFX_DKMS_KERNEL}: booting it would leave that GPU without its driver (check: dkms status)"
+  fi
+  if (( GFX_NVSMI_FAILED )); then
+    warn "nvidia-smi can't reach the NVIDIA driver -- if a reboot doesn't cure it, run ~/scripts/fix-nvidia-kepler.sh"
+  fi
+  return 0
 }
 
 #───────────────────────────────────────────────────────────────────────────
@@ -364,6 +569,9 @@ else
   box_row "NTP synced" "$NTP_SYNCED" "${YELLOW}${NTP_SYNCED}${RESET}"
 fi
 box_bottom
+
+echo
+graphics_box || true
 
 section "Local weather"
 weather --latitude 48.215583 --longitude 16.513131 || warn "Could not fetch weather (network down?)"
