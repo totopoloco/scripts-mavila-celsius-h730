@@ -65,6 +65,13 @@ breaks `nvidia-smi`. This single fact drives four scripts:
 When touching any of these four, re-check the others for consistency (e.g. the apt pin file paths listed
 at the top of `switch-to-nouveau.sh` must match what `fix-nvidia-kepler.sh` actually writes).
 
+`verify-nouveau.sh` is the read-only companion to `switch-to-nouveau.sh`: run after the switch and reboot
+(and again after `do-release-upgrade`), it checks the session type, whether the K2100M runtime-suspends
+when idle, the kernel driver bound to it, the default vs `DRI_PRIME=1` GL renderer, and nouveau's
+kernel-log messages, each as an ok / `!` / `x` verdict (exit 1 on any `x`). It changes nothing and reads
+none of the pin or hold files, so it sits outside the consistency check above. Its idle power reading
+comes first on purpose: `lspci` and any GL client wake the card.
+
 ### performance-tuning.sh: apply / undo / status / boot-apply lifecycle
 
 The largest script in the repo (~900 lines). It has five modes (`--apply` default, `--undo`, `--status`,

@@ -22,6 +22,10 @@ this exact GPU.
   and holds the real 470 build).
 - `switch-to-nouveau.sh` — migrates off proprietary NVIDIA to `nouveau` entirely, needed before a
   release/kernel upgrade the 470 branch can't build against.
+- `verify-nouveau.sh` — read-only health check to run after `switch-to-nouveau.sh` and the reboot (and
+  again after a release upgrade): session type, whether the K2100M runtime-suspends when idle, the
+  kernel driver bound to it, default vs `DRI_PRIME=1` GL renderer, and nouveau's kernel-log messages,
+  each with an ok / warning / failure verdict. Exits 1 on any failure; no sudo, changes nothing.
 - `performance-tuning.sh` — full apply/undo/status tuning for maximum performance on this specific host
   (CPU governor/turbo, PCIe ASPM, SATA ALPM, USB/Wi-Fi power saving, sysctl/limits drop-ins, boot-time
   systemd unit). Fully reversible via `--undo`. `--iobench` runs a read-only per-disk throughput check
