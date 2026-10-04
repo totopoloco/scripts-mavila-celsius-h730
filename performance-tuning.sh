@@ -505,6 +505,10 @@ wifi.powersave = 2
 EOF
 }
 
+# WantedBy=graphical.target, not multi-user.target: power-profiles-daemon 0.30
+# (Ubuntu 26.04) is ordered After=multi-user.target, so a unit that runs after
+# it but is wanted by multi-user.target closes an ordering cycle, and systemd
+# silently deletes this unit's start job at every boot.
 service_content() {
 cat <<EOF
 [Unit]
@@ -519,7 +523,7 @@ RemainAfterExit=yes
 ExecStart=$INSTALLED_COPY --boot-apply
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target
 EOF
 }
 
@@ -560,8 +564,7 @@ do_apply() {
       if [ "$DRYRUN" = 1 ]; then
         dry "gsettings($DESK_USER) $key : $cur -> $val"
       else
-        # shellcheck disable=SC2086
-        if gsettings_user set "$schema" "$key" $val; then
+        if gsettings_user set "$schema" "$key" "$val"; then
           ok "gsettings $key = $val (was $cur)"
         else
           warn "could not set gsettings $key (no active session?)"
@@ -577,13 +580,15 @@ do_apply() {
     dry "install $SELF_REALPATH -> $INSTALLED_COPY (0755, root)"
     dry "write $SERVICE_FILE"
     dry "run: systemctl daemon-reload"
-    dry "run: systemctl enable $SERVICE_NAME"
+    dry "run: systemctl reenable $SERVICE_NAME"
   else
     install -m 0755 -o root -g root "$SELF_REALPATH" "$INSTALLED_COPY" \
       && ok "installed $INSTALLED_COPY"
     service_content > "$SERVICE_FILE" && chmod 0644 "$SERVICE_FILE" && ok "wrote $SERVICE_FILE"
     systemctl daemon-reload
-    systemctl enable "$SERVICE_NAME" >/dev/null 2>&1 \
+    # reenable, not enable: its disable step also removes links left by an
+    # older [Install] section (the multi-user.target.wants/ one closed the cycle).
+    systemctl reenable "$SERVICE_NAME" >/dev/null 2>&1 \
       && ok "enabled $SERVICE_NAME (re-applies runtime knobs every boot)" \
       || warn "could not enable $SERVICE_NAME"
   fi
@@ -683,8 +688,7 @@ restore_gsettings() {
     if [ "$DRYRUN" = 1 ]; then
       dry "gsettings($DESK_USER) restore $key -> $val"
     else
-      # shellcheck disable=SC2086
-      gsettings_user set "$schema" "$key" $val \
+      gsettings_user set "$schema" "$key" "$val" \
         && ok "gsettings $key restored to $val" \
         || warn "could not restore gsettings $key"
     fi
