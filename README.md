@@ -1,10 +1,10 @@
 # scripts-mavila-celsius-h730
 
-Personal scripts for administering my Fujitsu CELSIUS H730 workstation: Ubuntu 24.04 LTS (kernel 6.8),
+Personal scripts for administering my Fujitsu CELSIUS H730 workstation: Ubuntu 26.04 LTS (kernel 7.0),
 Intel Core i7-4910MQ, NVIDIA Quadro K2100M (Kepler). Paths, driver versions, and tuning values are
 hardcoded to this one machine — treat this as reference material rather than a drop-in toolkit.
 
-The checkout lives at `~/scripts-mavila-celsius-h730` and is symlinked as `~/scripts`; scripts that
+The checkout lives at `~/Documents/scripts-mavila-celsius-h730` and is symlinked as `~/scripts`; scripts that
 reference each other use the `~/scripts/...` path.
 
 ## Contents
@@ -15,13 +15,14 @@ that would work unmodified on any Debian/Ubuntu box.
 
 ### Specific to this machine
 
-**GPU & hardware tuning** — the Quadro K2100M only supports the NVIDIA 470 driver branch, and Ubuntu
-24.04 has a way of silently upgrading it to the incompatible 535 branch; this ties several scripts to
-this exact GPU.
+**GPU & hardware tuning** — the Quadro K2100M only supports the NVIDIA 470 driver branch. Ubuntu 24.04
+kept silently upgrading it to the incompatible 535 branch, and 26.04 doesn't ship 470 at all, so the
+machine moved to `nouveau` (2026-09-30) before upgrading to 26.04 (2026-10-04). This ties several
+scripts to this exact GPU.
 - `fix-nvidia-kepler.sh` — repairs a broken driver install (pins the bad version, purges 535, reinstalls
-  and holds the real 470 build).
+  and holds the real 470 build). Only applies to 24.04; 26.04 has no 470 package.
 - `switch-to-nouveau.sh` — migrates off proprietary NVIDIA to `nouveau` entirely, needed before a
-  release/kernel upgrade the 470 branch can't build against.
+  release/kernel upgrade the 470 branch can't build against (run on this machine on 2026-09-30).
 - `verify-nouveau.sh` — read-only health check to run after `switch-to-nouveau.sh` and the reboot (and
   again after a release upgrade): session type, whether the K2100M runtime-suspends when idle, the
   kernel driver bound to it, default vs `DRI_PRIME=1` GL renderer, and nouveau's kernel-log messages,
@@ -45,7 +46,7 @@ this exact GPU.
 
 **App launchers** — background-launch the app with a per-app HiDPI `--force-device-scale-factor` tuned
 by eye for this display; the factor would need re-tuning for a different monitor.
-`brave.sh`, `chrome.sh`, `edge.sh`, `mongodb.sh`, `postman.sh`, `signal.sh`, `skype.sh`, `slack.sh`,
+`chrome.sh`, `mongodb.sh`, `postman.sh`, `signal.sh`, `skype.sh`, `slack.sh`,
 `sublime.sh`, `teams.sh`, `telegram.sh`, `thunderbird.sh`, `vscode.sh`.
 - `vivaldi-openvalue.sh` — same idea, but launches Vivaldi under a separate `openvalue` OS user for a
   sandboxed work profile; depends on that user existing and an X11 session.

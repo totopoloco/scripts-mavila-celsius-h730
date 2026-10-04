@@ -5,12 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repository is
 
 A personal collection of standalone shell scripts (plus one docker-compose sandbox) for administering
-**one specific physical machine**: a Fujitsu CELSIUS H730 workstation running Ubuntu 24.04 LTS (Noble,
-kernel 6.8) with an Intel Core i7-4910MQ (Haswell) CPU and an NVIDIA Quadro K2100M (Kepler-class) GPU.
+**one specific physical machine**: a Fujitsu CELSIUS H730 workstation running Ubuntu 26.04 LTS (Resolute,
+kernel 7.0) with an Intel Core i7-4910MQ (Haswell) CPU and an NVIDIA Quadro K2100M (Kepler-class) GPU.
 This is not an application with a build/test pipeline — there is no package.json/Makefile, no test
 suite, and none is expected. Each script is independent and directly executable.
 
-The live checkout is symlinked as `~/scripts` (i.e. `~/scripts -> scripts-mavila-celsius-h730`).
+The live checkout is symlinked as `~/scripts` (i.e. `~/scripts -> ~/Documents/scripts-mavila-celsius-h730`).
 Scripts that reference "this repo" in comments, generated apt-pin files, or warning messages use the
 path `~/scripts/<name>.sh` — follow that convention in anything new rather than the absolute repo path.
 
@@ -46,13 +46,15 @@ pass_display.sh and pass_search.sh needed --show-secrets all along.")
 ### The Kepler GPU constraint ties several scripts together
 
 The GPU (Quadro K2100M / GK106) is Kepler-class, which NVIDIA only supports up to the **470** driver
-branch. On this Ubuntu release, the 470 package at one specific version was turned into a transitional
-stub that depends on **535** (which dropped Kepler support), so an ordinary `apt upgrade` silently
-breaks `nvidia-smi`. This single fact drives four scripts:
+branch. On Ubuntu 24.04, the 470 package at one specific version was turned into a transitional stub
+that depends on **535** (which dropped Kepler support), so an ordinary `apt upgrade` silently broke
+`nvidia-smi`; 26.04 ships no 470 at all. The machine therefore switched to `nouveau` on 2026-09-30 and
+upgraded to 26.04 on 2026-10-04. This history drives four scripts:
 
 - `fix-nvidia-kepler.sh` — repairs a broken install: pins the poisoned transitional version to `-1`,
   purges the 535 branch, reinstalls the real 470 build, and holds it so future upgrades can't clobber it
   again. Supports `--dry-run` / `--reboot`; logs real runs to a timestamped file next to the script.
+  Only meaningful on 24.04: 26.04 has no 470 package to reinstall.
 - `switch-to-nouveau.sh` — the escape hatch: fully migrates off proprietary NVIDIA to the in-kernel
   `nouveau` driver (needed before moving to a kernel/release the 470 branch can't build against). Undoes
   the apt pins/holds `fix-nvidia-kepler.sh` created.
@@ -87,11 +89,15 @@ The largest script in the repo (~900 lines). It has five modes (`--apply` defaul
    (governor, USB autosuspend, SATA ALPM, Wi-Fi powersave, gsettings, sysctl values) into
    `/var/backups/performance-tuning/`.
 2. Persistent config goes into drop-ins (`/etc/sysctl.d/99-performance.conf`,
-   `/etc/security/limits.d/99-performance.conf`, an NetworkManager conf.d file) rather than editing
-   existing files in place.
+   `/etc/security/limits.d/99-performance.conf`, a NetworkManager conf.d file) rather than editing
+   existing files in place. The NetworkManager one is named `zz-performance-wifi-powersave-off.conf`
+   because NetworkManager loads conf.d in name order and the last file wins: it has to sort after the
+   package's own `default-wifi-powersave-on.conf`.
 3. Runtime-only knobs (CPU governor/turbo, ASPM, ALPM, USB, Wi-Fi power save) are re-applied on every
    boot by installing a copy of the script to `/usr/local/sbin/` plus a `performance-tuning.service`
-   systemd unit that runs it with `--boot-apply`.
+   systemd unit that runs it with `--boot-apply`. The unit is `WantedBy=graphical.target`: it orders
+   itself after `power-profiles-daemon`, which on 26.04 is ordered after `multi-user.target`, so hooking
+   into `multi-user.target` forms a cycle that systemd breaks by silently dropping this unit at boot.
 4. `--undo` reverses all of the above from the snapshot and removes the installed copy + unit.
 
 `--iobench` sits outside that snapshot/undo lifecycle entirely — it's a read-only diagnostic (a per-disk
@@ -111,7 +117,7 @@ unmodified on any Debian/Ubuntu box. (`fix-nvidia-kepler.sh`, `switch-to-nouveau
 constraint, not repeated here.)
 
 **Specific to this machine**
-- App launchers (`brave.sh`, `chrome.sh`, `edge.sh`, `mongodb.sh`, `postman.sh`, `signal.sh`,
+- App launchers (`chrome.sh`, `mongodb.sh`, `postman.sh`, `signal.sh`,
   `skype.sh`, `slack.sh`, `sublime.sh`, `teams.sh`, `telegram.sh`, `thunderbird.sh`, `vscode.sh`) — all
   follow the same one-line-body template: set `MY_FACTOR` (a per-app HiDPI `--force-device-scale-factor`
   tuned by eye for this display), launch the app backgrounded with output silenced. Match this template
