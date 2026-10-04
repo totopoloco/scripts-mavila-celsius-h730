@@ -22,7 +22,7 @@
 # PERSISTENCE
 #   * Kernel params -> /etc/sysctl.d/99-performance.conf
 #   * Resource limits -> /etc/security/limits.d/99-performance.conf
-#   * Wi-Fi powersave -> /etc/NetworkManager/conf.d/99-performance-wifi-powersave-off.conf
+#   * Wi-Fi powersave -> /etc/NetworkManager/conf.d/zz-performance-wifi-powersave-off.conf
 #   * Runtime knobs (CPU governor, turbo, PCIe ASPM, SATA ALPM, USB autosuspend,
 #     HDD spindown, Wi-Fi, power-profiles-daemon) are re-applied on every boot by
 #     a tiny systemd unit (performance-tuning.service) that runs the installed
@@ -97,7 +97,12 @@ SYSCTL_KEYS=(
 
 SYSCTL_FILE="/etc/sysctl.d/99-performance.conf"
 LIMITS_FILE="/etc/security/limits.d/99-performance.conf"
-NM_FILE="/etc/NetworkManager/conf.d/99-performance-wifi-powersave-off.conf"
+# NetworkManager reads conf.d in name order and the last file wins, so the
+# drop-in must sort after network-manager's own default-wifi-powersave-on.conf
+# (wifi.powersave = 3). The old 99- name sorted before it and was overridden;
+# apply and undo remove that file if an earlier version left it behind.
+NM_FILE="/etc/NetworkManager/conf.d/zz-performance-wifi-powersave-off.conf"
+NM_FILE_OLD="/etc/NetworkManager/conf.d/99-performance-wifi-powersave-off.conf"
 SERVICE_NAME="performance-tuning.service"
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME"
 INSTALLED_COPY="/usr/local/sbin/performance-tuning.sh"
@@ -538,6 +543,7 @@ do_apply() {
 
   hdr "Wi-Fi powersave config -> $NM_FILE"
   nm_content | write_managed_file "$NM_FILE"
+  remove_file "$NM_FILE_OLD"
   if command -v nmcli >/dev/null 2>&1; then
     run nmcli general reload >/dev/null 2>&1 && ok "NetworkManager reloaded" || true
   fi
@@ -733,6 +739,7 @@ do_undo() {
 
   hdr "Removing Wi-Fi powersave drop-in"
   remove_file "$NM_FILE"
+  remove_file "$NM_FILE_OLD"
   if command -v nmcli >/dev/null 2>&1; then
     run nmcli general reload >/dev/null 2>&1 && ok "NetworkManager reloaded" || true
   fi
@@ -776,6 +783,9 @@ do_status() {
     [ -e "$i" ] || continue; i="$(basename "$i")"
     show_one "wifi power_save ($i)" "$(command -v iw >/dev/null 2>&1 && iw dev "$i" get power_save 2>/dev/null | sed -n 's/.*Power save:[[:space:]]*//p' || echo n/a)"
   done
+  # The value NetworkManager ends up with after merging every conf.d file.
+  local _nm; _nm="$(NetworkManager --print-config 2>/dev/null | sed -n 's/^wifi\.powersave=//p' | tail -n1)"
+  show_one "NM wifi.powersave (effective)" "${_nm:-n/a}${_nm:+ (2 = off, 3 = on)}"
   show_one "CPU package temp" "$(awk 'BEGIN{t=0} {t=$1} END{printf "%.0f C", t/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null)"
   echo
 }
