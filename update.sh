@@ -3,8 +3,9 @@
 # ───────────────────────────────────────────────────────────
 #   System Update Script
 #   - Updates package lists, full-upgrades, cleans up, refreshes snaps
-#   - Warns before an available Ubuntu LTS release (Kepler GPU caveat --
-#     see fix-nvidia-kepler.sh / switch-to-nouveau.sh)
+#   - Warns before an available Ubuntu LTS release: while the NVIDIA card is
+#     on the proprietary driver, the Kepler caveat (see fix-nvidia-kepler.sh /
+#     switch-to-nouveau.sh); on nouveau, the DKMS modules to check first
 #   - Prints a formatted recap: timing, package/snap counts, disk
 #     usage, reboot status, system info, graphics (GPUs, drivers,
 #     GL renderer, session, displays, DKMS), and local weather
@@ -135,12 +136,28 @@ apt_summary_counts() {
 
 # ── LTS upgrade check ──────────────────────────────────────────────────────
 # On this machine (Quadro K2100M / Kepler), NVIDIA 470 won't build on the
-# new LTS kernel. ~/scripts/switch-to-nouveau.sh must run BEFORE upgrading.
+# new LTS kernel, so ~/scripts/switch-to-nouveau.sh must run BEFORE upgrading
+# -- but only while the card is still on the proprietary driver. On nouveau
+# the remaining risk is an out-of-tree DKMS module (evdi) that doesn't build
+# on the new kernel: that aborts the kernel's setup before its initramfs.
 _lts_available() {
   command -v do-release-upgrade &>/dev/null || return 1
   local out
   out=$(do-release-upgrade -c 2>&1) || true
   grep -qiE '^New release.*available' <<<"$out"
+}
+
+# _nvidia_driver_bound: true while a display-class PCI device is bound to the
+# proprietary nvidia driver. Reads sysfs like graphics_box, so it can't wake a
+# runtime-suspended card.
+_nvidia_driver_bound() {
+  local dev cls
+  for dev in /sys/bus/pci/devices/*; do
+    cls="$(cat "$dev/class" 2>/dev/null)" || continue
+    [[ "$cls" == 0x03* && -L "$dev/driver" ]] || continue
+    if [[ "$(basename "$(readlink "$dev/driver")")" == nvidia ]]; then return 0; fi
+  done
+  return 1
 }
 
 # ── Graphics info ──────────────────────────────────────────────────────────
@@ -408,26 +425,40 @@ if _lts_available; then
   BOX_COLOR="$YELLOW"
   echo
   box_top "Ubuntu LTS upgrade available"
-  box_line "Action required before running do-release-upgrade:"
-  box_line ""
-  box_line "This machine has a Kepler GPU (Quadro K2100M). The NVIDIA 470"
-  box_line "driver is EOL and will NOT build on the new LTS kernel."
-  box_line ""
-  box_line "  1. Run:     ~/scripts/switch-to-nouveau.sh"
-  box_line "  2. Reboot and confirm the desktop still works on nouveau"
-  box_line "  3. Then:    sudo do-release-upgrade"
-  box_line ""
-  box_line "This update (apt-get dist-upgrade) stays on the current release"
-  box_line "and is safe to continue. Abort only if you want to deal with"
-  box_line "the nouveau switch right now."
-  box_bottom
-  BOX_COLOR="$CYAN"
-  echo
-  read -r -p "Continue with this update? [Y/n] " _lts_ans || _lts_ans="n"
-  _lts_ans="${_lts_ans:-y}"
-  if [[ ! "$_lts_ans" =~ ^[Yy]$ ]]; then
-    log "Update aborted. Run ~/scripts/switch-to-nouveau.sh when ready."
-    exit 0
+  if _nvidia_driver_bound; then
+    box_line "Action required before running do-release-upgrade:"
+    box_line ""
+    box_line "This machine has a Kepler GPU (Quadro K2100M). The NVIDIA 470"
+    box_line "driver is EOL and will NOT build on the new LTS kernel."
+    box_line ""
+    box_line "  1. Run:     ~/scripts/switch-to-nouveau.sh"
+    box_line "  2. Reboot and confirm the desktop still works on nouveau"
+    box_line "  3. Then:    sudo do-release-upgrade"
+    box_line ""
+    box_line "This update (apt-get dist-upgrade) stays on the current release"
+    box_line "and is safe to continue. Abort only if you want to deal with"
+    box_line "the nouveau switch right now."
+    box_bottom
+    BOX_COLOR="$CYAN"
+    echo
+    read -r -p "Continue with this update? [Y/n] " _lts_ans || _lts_ans="n"
+    _lts_ans="${_lts_ans:-y}"
+    if [[ ! "$_lts_ans" =~ ^[Yy]$ ]]; then
+      log "Update aborted. Run ~/scripts/switch-to-nouveau.sh when ready."
+      exit 0
+    fi
+  else
+    gfx_dkms_summary
+    box_line "The NVIDIA card is not on the proprietary driver, so no nouveau"
+    box_line "switch is needed before running do-release-upgrade."
+    if [[ -n "$GFX_DKMS" ]]; then
+      box_line ""
+      box_line "First confirm these DKMS modules support the new LTS kernel:"
+      box_line "  $GFX_DKMS"
+      box_line "One that fails to build leaves that kernel without an initramfs."
+    fi
+    box_bottom
+    BOX_COLOR="$CYAN"
   fi
 fi
 

@@ -57,8 +57,11 @@ breaks `nvidia-smi`. This single fact drives four scripts:
   `nouveau` driver (needed before moving to a kernel/release the 470 branch can't build against). Undoes
   the apt pins/holds `fix-nvidia-kepler.sh` created.
 - `update.sh` — the everyday `apt update && apt full-upgrade` driver. Before upgrading, it checks whether
-  a new Ubuntu LTS is available and, if so, warns to run `switch-to-nouveau.sh` first and reboot into a
-  working nouveau desktop *before* `do-release-upgrade`. Its closing summary ends with a Graphics box
+  a new Ubuntu LTS is available. If so, and a GPU is still bound to the proprietary `nvidia` driver (read
+  from sysfs), it warns to run `switch-to-nouveau.sh` first and reboot into a working nouveau desktop
+  *before* `do-release-upgrade`. On nouveau it shows an informational box instead (no prompt) listing the
+  graphics DKMS modules (evdi) to check against the new kernel. A DKMS module that fails to build there
+  aborts the kernel's setup before its initramfs is generated. Its closing summary ends with a Graphics box
   (GPUs and drivers, the offload card's power state, GL renderer, session, displays, and whether the
   graphics DKMS modules are built for the newest kernel). Those probes read sysfs/udev, never `lspci`,
   and query the NVIDIA card only while it reads `active`, so they can't wake a runtime-suspended card.

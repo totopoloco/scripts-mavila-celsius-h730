@@ -37,8 +37,9 @@ this exact GPU.
   the built-in mic (Realtek ALC282 on the Intel PCH codec) drops out of GNOME Settings > Sound > Input.
   Kernel/ALSA and the hardware mixer are unaffected; confirmed to need only a user-level service restart,
   not a reboot.
-- `update.sh` — daily `apt update && full-upgrade`; warns before an LTS upgrade if
-  `switch-to-nouveau.sh` hasn't been run yet (see GPU note above). The closing summary includes a
+- `update.sh` — daily `apt update && full-upgrade`; warns before an LTS upgrade if the NVIDIA card is
+  still on the proprietary driver, i.e. `switch-to-nouveau.sh` hasn't been run yet (see GPU note above);
+  on nouveau it lists the DKMS modules to check against the new kernel instead. The closing summary includes a
   Graphics box: GPUs and their drivers, the offload card's power state, GL renderer, session type,
   connected displays, and whether the graphics DKMS modules are built for the newest kernel.
 
