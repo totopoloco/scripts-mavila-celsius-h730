@@ -27,6 +27,12 @@ scripts to this exact GPU.
   again after a release upgrade): session type, whether the K2100M runtime-suspends when idle, the
   kernel driver bound to it, default vs `DRI_PRIME=1` GL renderer, and nouveau's kernel-log messages,
   each with an ok / warning / failure verdict. Exits 1 on any failure; no sudo, changes nothing.
+- `nouveau-video-firmware.sh` — installs the K2100M's video-decode firmware (`nouveau/nve6_fuc084` and
+  its two siblings), which NVIDIA's license keeps out of every package, so nouveau stops logging
+  `Direct firmware load ... failed` / `msvld: init failed` whenever something probes the card. Downloads
+  NVIDIA's 340.108 installer, unpacks only `nv-kernel.o` without running any of it, cuts out three
+  SHA-256-pinned blobs and installs them into `/usr/lib/firmware/nouveau/` (the only sudo step).
+  `--dry-run` / `--status` / `--test` / `--undo`; never overwrites or removes a file it didn't install.
 - `performance-tuning.sh` — full apply/undo/status tuning for maximum performance on this specific host
   (CPU governor/turbo, PCIe ASPM, SATA ALPM, USB/Wi-Fi power saving, sysctl/limits drop-ins, boot-time
   systemd unit). Fully reversible via `--undo`. `--iobench` runs a read-only per-disk throughput check

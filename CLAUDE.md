@@ -80,6 +80,18 @@ kernel-log messages, each as an ok / `!` / `x` verdict (exit 1 on any `x`). It c
 none of the pin or hold files, so it sits outside the consistency check above. Its idle power reading
 comes first on purpose: `lspci` and any GL client wake the card.
 
+`nouveau-video-firmware.sh` supplies the one file nouveau still asks for and can't find: the K2100M's
+VP5 video-decode firmware (`nouveau/nve6_fuc084`, plus `…085`/`…086` for the other two video engines),
+which NVIDIA's license keeps out of every distro package. It downloads the 340.108 installer (the newest
+layout envytools' `extract_firmware.py` understands, which is why it isn't 470), unpacks only
+`kernel/nv-kernel.o` with `tail | xz | tar` so none of NVIDIA's code runs, cuts three blobs at pinned
+offsets, and checks the installer and each blob against pinned SHA-256s. Only the install into
+`/usr/lib/firmware/nouveau/` uses sudo, and `--undo` removes only entries whose hash or link target
+still matches. `--test` wakes the card and reads VA-API's decode profiles: Mesa lists them only after
+the kernel has loaded the firmware, so they are the proof. It clears the firmware lines from
+`verify-nouveau.sh` step 7 but not the PRIVRING faults logged on every wake, so that step still warns.
+Like `verify-nouveau.sh`, it touches no pin or hold files and sits outside the consistency check.
+
 ### performance-tuning.sh: apply / undo / status / boot-apply lifecycle
 
 The largest script in the repo (~900 lines). It has five modes (`--apply` default, `--undo`, `--status`,
