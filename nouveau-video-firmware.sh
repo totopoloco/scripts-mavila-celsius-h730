@@ -39,12 +39,14 @@
 # byte-identical files.
 #
 # Side effect: Mesa's VA-API driver now offers H.264, MPEG-2 and VC-1 decoding
-# on the K2100M. Your own session never asks for it, because ~/.profile pins
-# LIBVA_DRIVER_NAME=i965. The GDM greeter does: it runs as its own user
-# (gdm-greeter), rescans GStreamer's plugins at every boot, and probes the card
-# through VA-API. That deeper probe makes Mesa log more of the harmless
-# "gr: TRAP ... RT_HEIGHT_OVERRUN" reports it already logged there (11 instead
-# of 3 on the first boot with the firmware). verify-nouveau.sh doesn't flag them.
+# on the K2100M, so anything that probes the card through VA-API probes deeper.
+# On this machine nothing does: /etc/environment.d/90-libva-i965.conf pins
+# LIBVA_DRIVER_NAME=i965 for every user session, the GDM greeter included. That
+# file was set up by hand on 2026-10-06; this script doesn't manage it and
+# --undo leaves it alone. Without it, the greeter (its own user, gdm-greeter)
+# rescans GStreamer's plugins at every boot and probes the card, and with this
+# firmware present Mesa answers with 11 harmless "gr: TRAP ... RT_HEIGHT_OVERRUN"
+# reports instead of 3. verify-nouveau.sh doesn't flag those either way.
 #
 # A real --apply or --undo is logged to
 # nouveau-video-firmware-YYYYmmdd-HHMMSS.log next to this script.
