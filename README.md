@@ -50,6 +50,21 @@ scripts to this exact GPU.
   Graphics box: GPUs and their drivers, the offload card's power state, GL renderer, session type,
   connected displays, and whether the graphics DKMS modules are built for the newest kernel.
 
+**Printing**
+- `hplip-from-hp.sh` — installs HPLIP (HP's printing/scanning software and Device Manager) built from
+  HP's signed `hplip-<version>.run`, so Ubuntu's updates can't undo it. Ubuntu's own HPLIP packages own the
+  same paths, and the 26.04 upgrade put them back over HP's 3.25.2. The script checks the signature
+  against a pinned key and unpacks the source without running the installer. It builds as you, with
+  GCC 15 compatibility flags, after porting HP's Python code to 26.04 the way Ubuntu does: Ubuntu's own
+  Python patches (SHA-256-pinned) and `python3` first lines. HP's unported 3.26.6 doesn't start on
+  Python 3.14, and Ubuntu's 3.24.4 doesn't know the MFP 3302. Before installing, it tries the build
+  against the printer: a tool must start, the printer's model must be recognized, and it also reads the
+  supplies and queries the fax. If that passes, after showing apt's plan and asking, it backs up, swaps
+  Ubuntu's HPLIP packages for an empty local marker package, pins them out with an apt pin and runs
+  `make install`. The marker keeps the build's libraries safe from `update.sh`'s autoremove.
+  `--dry-run` / `--status` / `--undo` (`--undo` brings back Ubuntu's HPLIP, which can't see the MFP 3302).
+  Re-run it after a release upgrade.
+
 **App launchers** — background-launch the app with a per-app HiDPI `--force-device-scale-factor` tuned
 by eye for this display; the factor would need re-tuning for a different monitor.
 `chrome.sh`, `mongodb.sh`, `postman.sh`, `signal.sh`, `skype.sh`, `slack.sh`,

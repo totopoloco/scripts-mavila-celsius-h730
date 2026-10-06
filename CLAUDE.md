@@ -142,6 +142,41 @@ constraint, not repeated here.)
   built-in mic (ALC282 on the Intel PCH codec) is fine at the kernel/ALSA level, but WirePlumber's
   `alsa_input.pci-*.analog-stereo` node for it can get stuck or flap after a startup race. `--fix`
   restarts the user pipewire/pipewire-pulse/wireplumber services — no reboot needed, no sudo.
+- `hplip-from-hp.sh` — installs HPLIP (HP's print/scan stack and Device Manager) built from HP's signed
+  `hplip-<version>.run`, in a way Ubuntu's updates can't undo. Ubuntu's own HPLIP packages own the same
+  paths, and the 26.04 upgrade put them back over the 3.25.2 that HP's installer had set up; HP's
+  installer doesn't know 26.04 at all. Ubuntu's 3.24.4 Device Manager can also crash on a fax entry's
+  Supplies tab, which 3.26.6 fixes. The script checks the `.run` against a pinned HP key fingerprint
+  (`HP_KEY_FPR`), unpacks it with `tail | tar` so nothing in it runs, and builds as the user with HP's
+  configure line plus GCC 15 compatibility flags carried in `CC` (HPLIP's configure overwrites `CFLAGS`).
+  It ports HP's Python to 26.04 the way Ubuntu does:
+  - It applies 8 of Ubuntu's own `debian/patches`, fetched at the `applied/3.24.4+dfsg0-0ubuntu8.1` tag and
+    SHA-256-pinned in `UBUNTU_PATCHES`. The essential one is `hplip-no-urlopener`: 3.26.6 subclasses
+    `urllib.request.URLopener`, which Python 3.14 removed.
+  - It rewrites `#!/usr/bin/env python` first lines to python3, because 26.04 has no `python` command.
+
+  Before changing anything, it tries the build against the printer from the build tree. A tool must start,
+  each `hp:` queue's model must be in the build's `models.dat`, and it also queries the supplies and the
+  fax. Any failure stops the script there.
+
+  Learned on 2026-10-07: HP's unported 3.26.6 left every HPLIP Python tool broken. Ubuntu's 3.24.4
+  `models.dat` (owned by `libsane-hpaio`) has no MFP 3302 entry, so Ubuntu's HPLIP alone finds no device;
+  until then, a leftover 3.25.2 `models.dat` had hidden that.
+
+  Then, after showing apt's plan and asking, it:
+  - backs up to `/var/backups/hplip-from-hp/`;
+  - installs the empty local package `hplip-from-hp`, which conflicts with Ubuntu's HPLIP packages and
+    depends on the libraries the build links, so `update.sh`'s unattended `autoremove -y` can't remove
+    them;
+  - pins Ubuntu's HPLIP packages to -1 with `Pin: version *`, which also covers Ubuntu Pro ESM;
+  - runs `make install`.
+
+  `--undo` needs the build folder `~/Downloads/hp_installation/hplip-<version>/` for `make uninstall`, then
+  reinstalls Ubuntu's `hplip hplip-gui`, which can't see the MFP 3302 (see above). It can re-create the
+  folder from the `.run`. `--dry-run` builds
+  in a temp dir and asks apt for its real plan. There is also `--status`, and the script refuses to run as
+  root. Re-run it after a release upgrade, because the new Python can't load the old build. Its apt pin is
+  for unrelated packages, so it sits outside the Kepler consistency check.
 - `monitoring.sh` — start/stop/restart/status wrapper (via `systemctl`) around the specific self-hosted
   log/monitoring stack installed on this box (logstash, filebeat, kibana, elasticsearch, guacd, tomcat9).
   Will error outright on any machine without those exact services.
