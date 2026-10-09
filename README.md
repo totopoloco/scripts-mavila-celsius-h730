@@ -48,7 +48,9 @@ scripts to this exact GPU.
   still on the proprietary driver, i.e. `switch-to-nouveau.sh` hasn't been run yet (see GPU note above);
   on nouveau it lists the DKMS modules to check against the new kernel instead. The closing summary includes a
   Graphics box: GPUs and their drivers, the offload card's power state, GL renderer, session type,
-  connected displays, and whether the graphics DKMS modules are built for the newest kernel.
+  connected displays, and whether the graphics DKMS modules are built for the newest kernel. Upgrades
+  that Ubuntu's phased rollout holds back get a Phased updates box instead of apt's raw package list:
+  one row per update with its rollout %, the % this machine needs, and the fix from its changelog.
 
 **Printing**
 - `hplip-from-hp.sh` — installs HPLIP (HP's printing/scanning software and Device Manager) built from

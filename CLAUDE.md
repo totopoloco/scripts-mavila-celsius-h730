@@ -67,6 +67,11 @@ upgraded to 26.04 on 2026-10-04. This history drives four scripts:
   (GPUs and drivers, the offload card's power state, GL renderer, session, displays, and whether the
   graphics DKMS modules are built for the newest kernel). Those probes read sysfs/udev, never `lspci`,
   and query the NVIDIA card only while it reads `active`, so they can't wake a runtime-suspended card.
+  Upgrades deferred by Ubuntu's phased rollout get a Phased updates box in that summary instead of
+  apt's raw package list. It has one row per source package: the rollout %, the % this machine needs
+  (`phase_draw`, a bash port of apt 3.2's per-machine draw), and the first fix in the changelog. The
+  filter that drops the list reads only apt's plan line by line and then hands off to `cat`. A
+  line-buffered filter would hide a dpkg conffile prompt, which ends without a newline.
 - `performance-tuning.sh` — unrelated to the driver bug itself, but its `apply_runtime` step also touches
   GPU-adjacent power settings (PCIe ASPM) on the same box.
 

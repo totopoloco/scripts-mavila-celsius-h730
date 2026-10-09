@@ -6,6 +6,8 @@
 #   - Warns before an available Ubuntu LTS release: while the NVIDIA card is
 #     on the proprietary driver, the Kepler caveat (see fix-nvidia-kepler.sh /
 #     switch-to-nouveau.sh); on nouveau, the DKMS modules to check first
+#   - Swaps apt's list of upgrades deferred by Ubuntu's phased rollout
+#     for a per-update box: rollout %, the % this machine needs, the fix
 #   - Prints a formatted recap: timing, package/snap counts, disk
 #     usage, reboot status, system info, graphics (GPUs, drivers,
 #     GL renderer, session, displays, DKMS), and local weather
@@ -364,6 +366,204 @@ graphics_box() {
   return 0
 }
 
+# ── Phased updates ─────────────────────────────────────────────────────────
+# Ubuntu rolls bug-fix updates out in phases: each one starts at 10% of
+# machines and is raised while errors.ubuntu.com shows no new crashes (0%
+# means the rollout was stopped; security updates never phase). apt decides
+# once per source package, so one update can defer a dozen binaries. The full
+# upgrade's output therefore swaps apt's package list for a one-line pointer,
+# and the summary's "Phased updates" box lists the updates instead. Best-effort
+# cosmetics, like the Graphics box.
+
+# phase_draw <source>-<source version>-<machine id>: this machine's draw
+# (0-100) for that update; apt defers the update while the draw is above its
+# rollout percentage. A bash port of the std::seed_seq -> std::minstd_rand ->
+# std::uniform_int_distribution(0, 100) chain in apt 3.2's
+# IsIgnoredPhasedUpdate (apt-pkg/depcache.cc), following libstdc++. Words are
+# kept mod 2^32, like the uint32 arithmetic they mirror.
+phase_draw() {
+  local str="$1" s=${#1} n=4 p=1 q=2 m i k x r1 r2 c
+  local -a b=(0x8b8b8b8b 0x8b8b8b8b 0x8b8b8b8b 0x8b8b8b8b) v=()
+  for (( i = 0; i < s; i++ )); do printf -v c '%d' "'${str:i:1}"; v+=("$c"); done
+  # seed_seq::generate into the 4 words minstd_rand asks for (n = 4: t = 1, p = 1, q = 2)
+  m=$(( s + 1 > n ? s + 1 : n ))
+  for (( k = 0; k < m; k++ )); do
+    x=$(( b[k % n] ^ b[(k + p) % n] ^ b[(k + n - 1) % n] ))
+    r1=$(( 1664525 * (x ^ (x >> 27)) & 0xFFFFFFFF ))
+    if   (( k == 0 )); then r2=$(( (r1 + s) & 0xFFFFFFFF ))
+    elif (( k <= s )); then r2=$(( (r1 + k % n + v[k - 1]) & 0xFFFFFFFF ))
+    else                    r2=$(( (r1 + k % n) & 0xFFFFFFFF ))
+    fi
+    b[(k + p) % n]=$(( (b[(k + p) % n] + r1) & 0xFFFFFFFF ))
+    b[(k + q) % n]=$(( (b[(k + q) % n] + r2) & 0xFFFFFFFF ))
+    b[k % n]=$r2
+  done
+  for (( k = m; k < m + n; k++ )); do
+    x=$(( (b[k % n] + b[(k + p) % n] + b[(k + n - 1) % n]) & 0xFFFFFFFF ))
+    r1=$(( 1566083941 * (x ^ (x >> 27)) & 0xFFFFFFFF ))
+    r2=$(( (r1 - k % n) & 0xFFFFFFFF ))
+    b[(k + p) % n]=$(( b[(k + p) % n] ^ r1 ))
+    b[(k + q) % n]=$(( b[(k + q) % n] ^ r2 ))
+    b[k % n]=$r2
+  done
+  # minstd_rand starts at word 3 mod (2^31 - 1), never 0; uniform_int_distribution
+  # then takes libstdc++'s reject-and-divide path: 101 buckets of 21262214.
+  x=$(( b[3] % 2147483647 )); (( x != 0 )) || x=1
+  while :; do
+    x=$(( 48271 * x % 2147483647 ))
+    (( x - 1 >= 2147483614 )) || break
+  done
+  echo $(( (x - 1) / 21262214 ))
+}
+
+# phase_step <source>: points one run of Ubuntu's phased-updater adds to a
+# rollout (PUP_INCREMENT, with its MEDIUM_PACKAGES and SLOW_PACKAGES, in
+# ubuntu-archive-tools' phased-updater). It only feeds the "~N steps" estimate.
+phase_step() {
+  case "$1" in
+    openssh|openssl|rust-coreutils)                                    echo 5 ;;
+    grub2|grub2-signed|grub2-unsigned|shim|shim-signed|secureboot-db) echo 1 ;;
+    *)                                                                 echo 10 ;;
+  esac
+}
+
+# phase_fix <binary>=<version>: "<LP refs>\x1f<first bullet>\x1f<other bullets>"
+# from the top entry of that version's changelog, which apt fetches from
+# changelogs.ubuntu.com (prints nothing when it can't). A leading
+# "d/p/<patch>: " is dropped and the "(LP: #n)" split off, so the fix itself
+# gets the room.
+phase_fix() {
+  timeout 10 apt-get changelog "$1" 2>/dev/null | awk '
+    / urgency=/ { if (seen++) exit; next }
+    !seen       { next }
+    /^ -- /     { exit }
+    /^  \* /    { if (++n == 1) { t = $0; sub(/^  \* /, "", t); inb = 1 } else inb = 0; next }
+    inb && /^    [^ *+-]/ { s = $0; sub(/^ +/, "", s); t = t " " s; next }
+                { inb = 0 }
+    END {
+      if (t == "") exit
+      lp = ""
+      if (match(t, /\(?LP: *#[0-9]+(, *#[0-9]+)*\)?/)) {
+        lp = substr(t, RSTART, RLENGTH)
+        t = substr(t, 1, RSTART - 1) substr(t, RSTART + RLENGTH)
+        gsub(/[^0-9#,]/, "", lp); gsub(/,/, ", ", lp); lp = "LP " lp
+      }
+      sub(/^(d|debian)\/[^ ]+: */, "", t)
+      gsub(/  +/, " ", t); sub(/ +$/, "", t)
+      printf "%s\037%s\037%d\n", lp, t, n - 1
+    }' || true
+}
+
+# hide_phasing_list: copies apt-get's output through, but swaps its "deferred
+# due to phasing" package list for a pointer to the Phased updates box. Only
+# apt's plan is read line by line: from its "N upgraded, ..." line on, cat
+# passes the rest straight through, so a dpkg prompt that doesn't end in a
+# newline (a changed conffile) still shows the moment dpkg asks.
+hide_phasing_list() {
+  local line in_list=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if (( in_list )) && [[ "$line" == ' '* ]]; then continue; fi
+    in_list=0
+    if [[ "$line" == 'The following upgrades have been deferred due to phasing:' ]]; then
+      log "Phasing deferred some upgrades: see \"Phased updates\" in the summary"
+      in_list=1
+      continue
+    fi
+    printf '%s\n' "$line"
+    if [[ "$line" =~ ^[0-9]+\ upgraded, ]]; then exec cat; fi
+  done
+  return 0
+}
+
+# phasing_box: the "Phased updates" box for what this run's full upgrade
+# deferred -- one entry per update, soonest first, with the first fix from its
+# changelog -- and a blank line after it. Prints nothing if apt deferred nothing.
+phasing_box() {
+  local -a bins=()
+  local -A first=() bver=() sver=() pct=() nbin=() rank=() val=()
+  local mid="" never="" never_um="" b src sv v pu draw step steps w order lp fix more n_upd n_pkgs
+  mapfile -t bins < <(awk '
+    /^The following upgrades have been deferred due to phasing:$/ { f = 1; next }
+    f && /^ / { for (i = 1; i <= NF; i++) print $i; next }
+    f         { exit }' "$UPGRADE_LOG")
+  (( ${#bins[@]} )) || return 0
+
+  # Each binary's candidate -> source, source version, rollout percentage. No
+  # percentage means 100%: the rollout finished after apt made its plan.
+  while IFS=$'\x1f' read -r b src sv v pu; do
+    nbin[$src]=$(( ${nbin[$src]:-0} + 1 ))
+    if [[ -z "${first[$src]:-}" ]]; then
+      [[ "$pu" =~ ^[0-9]+$ ]] || pu=100
+      first[$src]="$b"; bver[$src]="$v"; sver[$src]="$sv"; pct[$src]="$pu"
+    fi
+  done < <(apt-cache show --no-all-versions "${bins[@]}" 2>/dev/null | awk '
+    function out() {
+      if (p != "") printf "%s\037%s\037%s\037%s\037%s\n", p, (s == "" ? p : s), (sv == "" ? v : sv), v, pu
+      p = ""
+    }
+    /^Package: / { out(); p = $2; s = sv = v = pu = "" }
+    /^Source: /  { s = $2; if (match($0, /\(.*\)/)) sv = substr($0, RSTART + 1, RLENGTH - 2) }
+    /^Version: / { v = $2 }
+    /^Phased-Update-Percentage: / { pu = $2 }
+    END { out() }')
+
+  box_top "Phased updates"
+  if (( ${#first[@]} == 0 )); then
+    box_line "apt-cache has no details on the ${#bins[@]} deferred packages"
+    box_bottom
+    echo
+    return 0
+  fi
+
+  # Same machine ID and opt-outs apt reads.
+  eval "$(apt-config shell mid APT::Machine-ID never APT::Get::Never-Include-Phased-Updates/b \
+    never_um Update-Manager::Never-Include-Phased-Updates/b 2>/dev/null)"
+  [[ -n "$mid" ]] || mid="$(head -n1 /etc/machine-id 2>/dev/null)" || mid=""
+  never="${never:-${never_um:-false}}"
+
+  for src in "${!first[@]}"; do   # changelogs download in parallel
+    phase_fix "${first[$src]}=${bver[$src]}" >"$TMP_DIR/phase-fix.$src" &
+  done
+  wait
+
+  for src in "${!first[@]}"; do
+    pu="${pct[$src]}"
+    w="${nbin[$src]} pkgs"; (( nbin[$src] != 1 )) || w="1 pkg"
+    if (( pu == 0 )); then
+      val[$src]="$w · rollout stopped at 0%"; rank[$src]=999
+    elif [[ "$never" == true ]]; then
+      val[$src]="$w · $pu% now · waits for 100%"; rank[$src]=998
+    else
+      draw="$(phase_draw "$src-${sver[$src]}-$mid")"
+      if (( draw <= pu )); then
+        val[$src]="$w · $pu% now · due next run"; rank[$src]=0
+      else
+        step="$(phase_step "$src")"
+        rank[$src]=$(( (draw - pu + step - 1) / step ))
+        steps="~${rank[$src]} steps"; (( rank[$src] != 1 )) || steps="~1 step"
+        val[$src]="$w · $pu% now · needs $draw% · $steps"
+      fi
+    fi
+  done
+
+  n_upd="${#first[@]} updates"; (( ${#first[@]} != 1 )) || n_upd="1 update"
+  n_pkgs="${#bins[@]} packages"; (( ${#bins[@]} != 1 )) || n_pkgs="1 package"
+  box_line "Not rolled out to this machine yet: $n_upd ($n_pkgs)"
+  order="$(for src in "${!first[@]}"; do printf '%s %s\n' "${rank[$src]}" "$src"; done \
+    | sort -k1,1n -k2,2 | cut -d' ' -f2)"
+  for src in $order; do
+    if (( rank[$src] == 999 )); then gfx_row "$src" "${val[$src]}" "$YELLOW"; else gfx_row "$src" "${val[$src]}"; fi
+    lp=""; fix=""; more=0
+    if [[ -s "$TMP_DIR/phase-fix.$src" ]]; then IFS=$'\x1f' read -r lp fix more <"$TMP_DIR/phase-fix.$src"; fi
+    [[ -n "$fix" ]] || continue
+    if (( more > 0 )); then fix="$(trunc "$fix" $(( GFX_W - 9 - ${#more} ))) (+$more more)"; fi
+    gfx_row "  $lp" "$fix"
+  done
+  box_bottom
+  echo
+  return 0
+}
+
 #───────────────────────────────────────────────────────────────────────────
 # Pre-flight
 #───────────────────────────────────────────────────────────────────────────
@@ -468,7 +668,7 @@ T_UPDATE=$(date +%s)
 # Full upgrade
 #───────────────────────────────────────────────────────────────────────────
 section "Full upgrade"
-sudo DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y 2>&1 | tee "$UPGRADE_LOG"
+sudo DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y 2>&1 | tee "$UPGRADE_LOG" | hide_phasing_list
 T_UPGRADE=$(date +%s)
 
 apt_summary_counts "$UPGRADE_LOG"
@@ -564,6 +764,8 @@ if [ "$REBOOT_REQUIRED" -eq 1 ]; then
   fi
 fi
 echo
+
+phasing_box || true
 
 box_top "Timing"
 box_row "Package lists" "$(fmt_dur $((T_UPDATE - START_EPOCH)))"
