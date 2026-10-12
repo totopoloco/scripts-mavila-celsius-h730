@@ -104,6 +104,14 @@ by eye for this display; the factor would need re-tuning for a different monitor
 - `pass_search.sh` — case-insensitive title search across a vault; prints a table without exposing
   passwords.
 
+**Writing & translation**
+- `deepl-cli.py` — corrects, rephrases and translates text with DeepL from the terminal, through
+  DeepL's Python SDK (`pipx install deepl`; the script re-runs itself with pipx's venv). The API key is
+  the `DEEPL_KEY=` line of the git-ignored `.env` next to it. `fix` corrects spelling and grammar only,
+  `rephrase` rewrites for style (and can add content, so read it), `tr <lang>` translates. Text comes
+  from the arguments or stdin and only the result goes to stdout, so it pipes (`wl-paste | deepl-cli.py
+  fix | wl-copy`); `-d` also shows a word diff of the changes. `usage` shows the monthly character quota.
+
 **Local infra sandbox**
 - `docker-compose.yml` + `postgres-docker/init-db/01-create-sample.sql` — disposable Postgres container
   seeded with sample data on first boot.
@@ -119,9 +127,9 @@ by eye for this display; the factor would need re-tuning for a different monitor
 
 ## Validating a script
 
-There's no build system; scripts are standalone. Check syntax with `bash -n script.sh`, lint with
-`shellcheck script.sh`, and prefer `--dry-run` / `--status` on the scripts that support it before running
-the real thing.
+There's no build system; scripts are standalone. Check syntax with `bash -n script.sh` (or
+`python3 -m py_compile deepl-cli.py` for the one Python script), lint with `shellcheck script.sh`, and
+prefer `--dry-run` / `--status` on the scripts that support it before running the real thing.
 
 ## License
 

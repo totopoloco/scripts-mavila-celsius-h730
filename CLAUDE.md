@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repository is
 
-A personal collection of standalone shell scripts (plus one docker-compose sandbox) for administering
-**one specific physical machine**: a Fujitsu CELSIUS H730 workstation running Ubuntu 26.04 LTS (Resolute,
-kernel 7.0) with an Intel Core i7-4910MQ (Haswell) CPU and an NVIDIA Quadro K2100M (Kepler-class) GPU.
+A personal collection of standalone shell scripts (plus one Python script and one docker-compose sandbox)
+for administering **one specific physical machine**: a Fujitsu CELSIUS H730 workstation running Ubuntu
+26.04 LTS (Resolute, kernel 7.0) with an Intel Core i7-4910MQ (Haswell) CPU and an NVIDIA Quadro K2100M
+(Kepler-class) GPU.
 This is not an application with a build/test pipeline — there is no package.json/Makefile, no test
 suite, and none is expected. Each script is independent and directly executable.
 
@@ -21,6 +22,7 @@ There's no build step. Use these instead:
 ```bash
 bash -n script.sh          # syntax check
 shellcheck script.sh       # lint (used historically on the nvidia scripts)
+python3 -m py_compile deepl-cli.py   # syntax check for the one Python script
 ```
 
 The larger system-modifying scripts implement their own safety rails — use them instead of running the
@@ -213,6 +215,20 @@ constraint, not repeated here.)
   `pass_search` does a case-insensitive substring search and prints a title/email/username table without
   exposing passwords. Follow this jq-over-pass-cli-json shape for any new credential-lookup script, and
   keep password values out of the search/list variant.
+- `deepl-cli.py` — the repo's one Python script, because it's a thin CLI over DeepL's Python SDK:
+  `fix`/`correct` (`/v2/write/correct`, spelling and grammar only, SDK ≥ 1.32.0), `rephrase`/`improve`
+  (`/v2/write/rephrase`, style/tone), `tr`/`translate`, `usage`, `languages`.
+  - The SDK lives in pipx's venv (`pipx install deepl`). The script starts under the system `python3` and
+    re-execs itself with that venv's Python when `import deepl` fails. A `sys.prefix` check stops that from
+    looping, and after a Python upgrade the fix is `pipx reinstall deepl`.
+  - Never name it `deepl.py`: the script's directory is `sys.path[0]`, so that name would shadow the SDK.
+  - The key is the `DEEPL_KEY=` line of the git-ignored `.env` next to the script (`*.env` in `.gitignore`).
+    The script parses that file rather than sourcing it and never prints the key.
+  - Only the result goes to stdout. `-d`'s word diff and the paste prompt go to stderr, so pipes such as
+    `wl-paste | deepl-cli.py fix | wl-copy` stay clean.
+  - Learned on 2026-10-11: on a Free key (`:fx`, 1,000,000 characters a month), both Write endpoints
+    work and draw on the same quota as translation. `rephrase` turned "A rainbouw has seven colours." into
+    a sentence listing all seven colours, which is why `fix` maps to correct, not rephrase.
 - `docker-compose.yml` + `postgres-docker/init-db/01-create-sample.sql` — disposable Postgres container
   seeded with sample data on first boot.
 - `gdm-hostname-banner.sh` — shows the live hostname on the GDM login screen. The dconf banner text is
