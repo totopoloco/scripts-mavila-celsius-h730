@@ -74,6 +74,12 @@ upgraded to 26.04 on 2026-10-04. This history drives four scripts:
   (`phase_draw`, a bash port of apt 3.2's per-machine draw), and the first fix in the changelog. The
   filter that drops the list reads only apt's plan line by line and then hands off to `cat`. A
   line-buffered filter would hide a dpkg conffile prompt, which ends without a newline.
+  When `apt update` exits 100 and its errors name a repository URL (one that's down, or serves an error
+  page where its signed index belongs), the run warns and goes on: apt keeps that repository's old lists
+  and refuses unsigned ones, and the Update Summary box names the host. Any other error (a held lock,
+  sources apt can't read, even when the error names a URL) still stops the run. Only apt's stderr goes
+  through `tee`, so stdout stays on the terminal (sudo-rs hands a piped stderr straight to the command):
+  `apt` keeps its progress display and prints no scripting warning.
 - `performance-tuning.sh` — unrelated to the driver bug itself, but its `apply_runtime` step also touches
   GPU-adjacent power settings (PCIe ASPM) on the same box.
 

@@ -51,6 +51,8 @@ scripts to this exact GPU.
   connected displays, and whether the graphics DKMS modules are built for the newest kernel. Upgrades
   that Ubuntu's phased rollout holds back get a Phased updates box instead of apt's raw package list:
   one row per update with its rollout %, the % this machine needs, and the fix from its changelog.
+  A repository that can't be refreshed (down, or serving an error page instead of its signed index)
+  doesn't stop the run: apt keeps that repository's old lists, and the summary names it.
 
 **Printing**
 - `hplip-from-hp.sh` — installs HPLIP (HP's printing/scanning software and Device Manager) built from

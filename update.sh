@@ -3,6 +3,8 @@
 # ───────────────────────────────────────────────────────────
 #   System Update Script
 #   - Updates package lists, full-upgrades, cleans up, refreshes snaps
+#   - Goes on when a repository can't be refreshed: apt keeps that
+#     repository's old lists, and the summary names it
 #   - Warns before an available Ubuntu LTS release: while the NVIDIA card is
 #     on the proprietary driver, the Kepler caveat (see fix-nvidia-kepler.sh /
 #     switch-to-nouveau.sh); on nouveau, the DKMS modules to check first
@@ -35,6 +37,7 @@ fi
 log()     { printf '%s[INFO]%s %s\n' "$BLUE" "$RESET" "$*"; }
 success() { printf '%s[ OK ]%s %s\n' "$GREEN" "$RESET" "$*"; }
 warn()    { printf '%s[WARN]%s %s\n' "$YELLOW" "$RESET" "$*"; }
+err()     { printf '%s[FAIL]%s %s\n' "$RED" "$RESET" "$*" >&2; }
 
 # Fill strings for rules/bars. `tr ' ' '─'` mangles multi-byte UTF-8 (it
 # cycles raw bytes, not codepoints), so fills are sliced off a pre-built
@@ -134,6 +137,21 @@ apt_summary_counts() {
   else
     n_upg="?"; n_new="?"; n_rm="?"; n_keep="?"
   fi
+}
+
+# apt_failed_hosts <log>: the hosts of the repositories that apt's error lines
+# name, comma-separated ("Error: Failed to fetch https://<host>/dists/...",
+# "Error: The repository 'https://<host> <suite> InRelease' is no longer
+# signed."). Nothing if no error line names one, or if apt couldn't read its
+# sources at all (it then fetched nothing, whatever repository the errors
+# name). apt colors these even through a pipe (it only asks whether stdout is
+# a terminal), so the colors go first.
+apt_failed_hosts() {
+  local errs
+  errs="$(sed -E 's/\x1b\[[0-9;]*m//g' "$1" | sed -nE 's/^(E|Error): //p')" || errs=""
+  if [[ "$errs" == *'The list of sources could not be read'* ]]; then return 0; fi
+  grep -oE "[a-z][a-z0-9+.-]*://[^/ ']+" <<<"$errs" | sed -E 's|^[^:]*://||' \
+    | sort -u | paste -sd, - | sed 's/,/, /g' || true
 }
 
 # ── LTS upgrade check ──────────────────────────────────────────────────────
@@ -569,6 +587,7 @@ phasing_box() {
 #───────────────────────────────────────────────────────────────────────────
 TMP_DIR="$(mktemp -d -t update-sh.XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+UPDATE_ERR_LOG="$TMP_DIR/update-errors.log"
 PREFLIGHT_LOG="$TMP_DIR/preflight-upgrade.log"
 UPGRADE_LOG="$TMP_DIR/full-upgrade.log"
 AUTOREMOVE_LOG="$TMP_DIR/autoremove.log"
@@ -592,7 +611,27 @@ box_bottom
 # Package lists
 #───────────────────────────────────────────────────────────────────────────
 section "Package lists"
-sudo apt update -y
+# A repository that can't be refreshed (down, or serving an error page where
+# its signed index belongs) makes apt update exit 100. apt keeps that
+# repository's old lists and refuses unsigned ones, so the upgrade goes ahead
+# with the rest and the summary names the repository. Any other error (a held
+# lock, sources apt can't read) would stop the next apt command too, so it
+# stops the run here. Only stderr goes through tee: with stdout still on the
+# terminal, apt keeps its progress display and doesn't warn about being
+# scripted.
+LISTS_FAILED=""
+UPDATE_RC=0
+{ sudo apt update -y 2>&1 1>&3 3>&- | tee "$UPDATE_ERR_LOG" >&2; } 3>&1 || UPDATE_RC=$?
+if (( UPDATE_RC == 100 )); then
+  LISTS_FAILED="$(apt_failed_hosts "$UPDATE_ERR_LOG")"
+  if [[ -z "$LISTS_FAILED" ]]; then
+    err "apt update failed (see its errors above) -- stopping before the upgrade"
+    exit "$UPDATE_RC"
+  fi
+  warn "apt couldn't refresh the lists from ${LISTS_FAILED} -- continuing with the ones it already had"
+elif (( UPDATE_RC != 0 )); then
+  exit "$UPDATE_RC"
+fi
 
 sudo apt-get dist-upgrade -s 2>&1 | tee "$PREFLIGHT_LOG" >/dev/null || true
 apt_summary_counts "$PREFLIGHT_LOG"
@@ -750,6 +789,7 @@ if [ "$REBOOT_REQUIRED" -eq 1 ]; then
 else
   box_row "Reboot required" "no"  "${GREEN}no${RESET}"
 fi
+if [[ -n "$LISTS_FAILED" ]]; then gfx_row "Lists not refreshed" "$LISTS_FAILED" "$YELLOW"; fi
 box_bottom
 
 if [ "$REBOOT_REQUIRED" -eq 1 ]; then
