@@ -154,6 +154,22 @@ apt_failed_hosts() {
     | sort -u | paste -sd, - | sed 's/,/, /g' || true
 }
 
+# tty_crlf: copies stdin through, with a carriage return before each newline
+# when stdout is a terminal. While sudo-rs runs a command whose stdout is the
+# terminal, it turns the terminal's output processing off along with the rest
+# of raw mode (it leaves it on only when stdout is a pipe). Text that reaches
+# the terminal by another path meanwhile, such as apt's stderr through tee,
+# then gets no carriage return: each line starts in the column where the last
+# one ended. perl passes on each read at once, so text without a newline still
+# shows straight away.
+tty_crlf() {
+  if [[ -t 1 ]]; then
+    perl -e '$| = 1; while (sysread STDIN, my $buf, 4096) { $buf =~ s/\n/\r\n/g; print $buf }'
+  else
+    cat
+  fi
+}
+
 # ── LTS upgrade check ──────────────────────────────────────────────────────
 # On this machine (Quadro K2100M / Kepler), NVIDIA 470 won't build on the
 # new LTS kernel, so ~/scripts/switch-to-nouveau.sh must run BEFORE upgrading
@@ -618,10 +634,11 @@ section "Package lists"
 # lock, sources apt can't read) would stop the next apt command too, so it
 # stops the run here. Only stderr goes through tee: with stdout still on the
 # terminal, apt keeps its progress display and doesn't warn about being
-# scripted.
+# scripted. sudo-rs then holds that terminal in raw mode until apt exits, so
+# tty_crlf puts the carriage returns into tee's copy.
 LISTS_FAILED=""
 UPDATE_RC=0
-{ sudo apt update -y 2>&1 1>&3 3>&- | tee "$UPDATE_ERR_LOG" >&2; } 3>&1 || UPDATE_RC=$?
+{ sudo apt update -y 2>&1 1>&3 3>&- | tee "$UPDATE_ERR_LOG" | tty_crlf >&2; } 3>&1 || UPDATE_RC=$?
 if (( UPDATE_RC == 100 )); then
   LISTS_FAILED="$(apt_failed_hosts "$UPDATE_ERR_LOG")"
   if [[ -z "$LISTS_FAILED" ]]; then

@@ -79,7 +79,9 @@ upgraded to 26.04 on 2026-10-04. This history drives four scripts:
   and refuses unsigned ones, and the Update Summary box names the host. Any other error (a held lock,
   sources apt can't read, even when the error names a URL) still stops the run. Only apt's stderr goes
   through `tee`, so stdout stays on the terminal (sudo-rs hands a piped stderr straight to the command):
-  `apt` keeps its progress display and prints no scripting warning.
+  `apt` keeps its progress display and prints no scripting warning. sudo-rs then holds the terminal in
+  raw mode with output processing off until apt exits, so `tty_crlf` adds the carriage returns to tee's
+  copy; without them, apt's warnings print as a staircase.
 - `performance-tuning.sh` — unrelated to the driver bug itself, but its `apply_runtime` step also touches
   GPU-adjacent power settings (PCIe ASPM) on the same box.
 
