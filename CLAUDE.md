@@ -192,6 +192,22 @@ constraint, not repeated here.)
   in a temp dir and asks apt for its real plan. There is also `--status`, and the script refuses to run as
   root. Re-run it after a release upgrade, because the new Python can't load the old build. Its apt pin is
   for unrelated packages, so it sits outside the Kepler consistency check.
+- `modernize-apt-sources.sh` — converts the third-party `.list` sources to deb822 `.sources` files and adds
+  `Architectures: amd64`. `apt modernize-sources` keeps only `signed-by`/`trusted` and drops `arch=`. Steam keeps
+  i386 enabled, so without it apt asks amd64-only repos for i386 lists and prints "doesn't support
+  architecture 'i386'". The script skips:
+  - Ubuntu's own sources (`*.ubuntu.com`) and Steam's, which Steam's i386 libraries come from;
+  - package-owned files (`steam-*.list`, `synaptics.list`, `protonvpn-stable.sources`), which dpkg would
+    prompt about;
+  - `KEEP_AS_IS` files that a postinst writes again as `.list` (spotify-client, bcompare), which would
+    duplicate every entry;
+  - sources that an installed i386 package comes from.
+
+  Two postinsts are fine with a converted file. Claude Desktop's skips its `.list` when the repo is in any
+  `.sources` file. Chrome's only manages `google-chrome.*`, not the hand-made `google.list`. A private
+  `apt-get update`, with its own lists and cache and `-o quiet=0` so `N:` notices show, tests the staged files
+  first. Any `E:`/`W:`/`N:`/`Err:` line stops the run. Backups plus a manifest go to
+  `/var/backups/modernize-apt-sources/<stamp>/`. `--undo` restores the newest and renames it `-undone`.
 - `monitoring.sh` — start/stop/restart/status wrapper (via `systemctl`) around the specific self-hosted
   log/monitoring stack installed on this box (logstash, filebeat, kibana, elasticsearch, guacd, tomcat9).
   Will error outright on any machine without those exact services.

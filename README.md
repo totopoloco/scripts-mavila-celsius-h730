@@ -54,6 +54,15 @@ scripts to this exact GPU.
   A repository that can't be refreshed (down, or serving an error page instead of its signed index)
   doesn't stop the run: apt keeps that repository's old lists, and the summary names it.
 
+**Package sources**
+- `modernize-apt-sources.sh` — moves the third-party apt sources from the old one-line `.list` format to
+  `.sources` files and limits them to amd64. `apt modernize-sources` drops that limit, and without it apt
+  asks those servers for 32-bit lists they don't have (Steam turns 32-bit on). It leaves alone Ubuntu's
+  own sources and Steam's (Steam's 32-bit libraries come from them), files a package owns, and files a
+  package's install script writes again (Spotify, Beyond Compare). Before changing anything it tries the
+  new files with a private `apt-get update`; it backs up every file it touches and has `--dry-run` and
+  `--undo`.
+
 **Printing**
 - `hplip-from-hp.sh` — installs HPLIP (HP's printing/scanning software and Device Manager) built from
   HP's signed `hplip-<version>.run`, so Ubuntu's updates can't undo it. Ubuntu's own HPLIP packages own the
