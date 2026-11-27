@@ -80,7 +80,7 @@ scripts to this exact GPU.
 
 **App launchers** — background-launch the app with a per-app HiDPI `--force-device-scale-factor` tuned
 by eye for this display; the factor would need re-tuning for a different monitor.
-`chrome.sh`, `mongodb.sh`, `postman.sh`, `signal.sh`, `skype.sh`, `slack.sh`,
+`chrome.sh`, `mongodb.sh`, `postman.sh`, `signal.sh`, `slack.sh`,
 `sublime.sh`, `teams.sh`, `telegram.sh`, `thunderbird.sh`, `vscode.sh`.
 - `vivaldi-openvalue.sh` — same idea, but launches Vivaldi under a separate `openvalue` OS user for a
   sandboxed work profile; depends on that user existing and an X11 session.

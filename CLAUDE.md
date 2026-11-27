@@ -145,7 +145,7 @@ constraint, not repeated here.)
 
 **Specific to this machine**
 - App launchers (`chrome.sh`, `mongodb.sh`, `postman.sh`, `signal.sh`,
-  `skype.sh`, `slack.sh`, `sublime.sh`, `teams.sh`, `telegram.sh`, `thunderbird.sh`, `vscode.sh`) — all
+  `slack.sh`, `sublime.sh`, `teams.sh`, `telegram.sh`, `thunderbird.sh`, `vscode.sh`) — all
   follow the same one-line-body template: set `MY_FACTOR` (a per-app HiDPI `--force-device-scale-factor`
   tuned by eye for this display), launch the app backgrounded with output silenced. Match this template
   exactly when adding a launcher for a new app. `vivaldi-openvalue.sh` is a variant of this pattern that
